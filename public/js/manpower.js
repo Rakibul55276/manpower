@@ -77,8 +77,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (pendingEntries.length && bulkApprove && bulkCount) {
         const refreshBulkApproval = () => {
             const selected = pendingEntries.filter(input => input.checked).length;
+            const item = bulkApprove.dataset.bulkItem || 'entry';
             bulkApprove.disabled = selected === 0;
-            bulkCount.textContent = selected ? `${selected} ${selected === 1 ? 'entry' : 'entries'} selected.` : 'Select pending entries below.';
+            bulkCount.textContent = selected ? `${selected} ${selected === 1 ? item : item + 's'} selected.` : `Select pending ${item}s below.`;
             if (selectAllPending) {
                 selectAllPending.checked = selected === pendingEntries.length;
                 selectAllPending.indeterminate = selected > 0 && selected < pendingEntries.length;

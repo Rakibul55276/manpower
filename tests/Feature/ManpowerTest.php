@@ -379,6 +379,23 @@ class ManpowerTest extends TestCase
         $this->delete(route('payrolls.destroy', $payroll))->assertForbidden();
         $this->post(route('payrolls.paid', $payroll))->assertForbidden();
     }
+    public function test_admin_bulk_approves_both_salary_types_and_pending_slips_cannot_print()
+    {
+        $rental = $this->employee(['name' => 'Bulk Rental Worker']); $this->entry($rental); $this->generate($rental);
+        $rentalPayroll = Payroll::where('employee_id', $rental->id)->firstOrFail();
+        $this->get(route('payrolls.pdf', $rentalPayroll))->assertRedirect()->assertSessionHasErrors('payslip');
+        $this->actingAs($this->approver)->get(route('payrolls.index'))->assertSee('Approve selected salaries');
+        $this->post(route('payrolls.bulk.approve'), ['payroll_ids' => [$rentalPayroll->id]])->assertSessionHasNoErrors();
+        $this->assertSame('approved', $rentalPayroll->fresh()->status);
+        $this->get(route('payrolls.pdf', $rentalPayroll))->assertOk()->assertHeader('Content-Type', 'application/pdf');
+
+        $own = $this->employee(['name' => 'Bulk Own Worker', 'employment_type' => 'own', 'salary_type' => 'monthly', 'monthly_salary_cents' => 500000]);
+        $this->generate($own, 'salaries'); $ownPayroll = Payroll::where('employee_id', $own->id)->firstOrFail();
+        $this->actingAs($this->manager)->post(route('salaries.bulk.approve'), ['payroll_ids' => [$ownPayroll->id]])->assertForbidden();
+        $this->actingAs($this->admin)->post(route('salaries.bulk.approve'), ['payroll_ids' => [$ownPayroll->id]])->assertSessionHasNoErrors();
+        $this->assertSame('approved', $ownPayroll->fresh()->status);
+        $this->get(route('salaries.pdf', $ownPayroll))->assertOk()->assertHeader('Content-Type', 'application/pdf');
+    }
     public function test_payroll_details_pdf_and_csv_are_scoped_to_company()
     {
         $employee = $this->employee(['name' => 'Restricted Salary Person', 'company_id' => $this->other->id]); $this->entry($employee); $this->generate($employee); $payroll = Payroll::firstOrFail();

@@ -119,6 +119,22 @@ class PayrollController extends Controller
         });
         return back()->with('success', 'Salary approved and ready for payment.');
     }
+    public function bulkApprove(Request $request)
+    {
+        $data = $request->validate(['payroll_ids' => 'required|array|min:1|max:100', 'payroll_ids.*' => 'required|integer|distinct|exists:payrolls,id']);
+        $approved = DB::transaction(function () use ($data) {
+            $records = Payroll::whereIn('id', $data['payroll_ids'])->lockForUpdate()->get();
+            abort_unless($records->count() === count($data['payroll_ids']), 422);
+            foreach ($records as $record) {
+                $this->check($record);
+                abort_unless($record->status === 'pending', 403, 'Only pending salaries can be approved.');
+                $record->update(['status' => 'approved', 'approved_by' => auth()->id(), 'approved_at' => now()]);
+                ActivityLog::record('Approved salary', 'Payslip #'.$record->id.' · '.$record->employee_name.' · Bulk approval');
+            }
+            return $records->count();
+        });
+        return back()->with('success', $approved.' '.($approved === 1 ? 'salary' : 'salaries').' approved and ready to print.');
+    }
     public function destroy(Payroll $payroll)
     {
         $this->check($payroll);
@@ -150,6 +166,7 @@ class PayrollController extends Controller
     public function pdf(Payroll $payroll)
     {
         $this->check($payroll);
+        if ($payroll->status === 'pending') { return back()->withErrors(['payslip' => 'Waiting for approval. The salary slip can be printed only after Admin approval.']); }
         return \App\Services\Documents::download(\App\Services\Documents::payslip($payroll), 'payslip-'.$payroll->id.'-'.$payroll->month.'.pdf');
     }
 }

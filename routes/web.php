@@ -63,6 +63,7 @@ Route::middleware(['auth', 'active', 'auth.session'])->group(function () {
         $controller = \App\Http\Controllers\PayrollController::class;
         Route::get('/'.$prefix, [$controller, 'index'])->defaults('workforce', $workforce)->name($prefix.'.index');
         Route::get('/'.$prefix.'/export', [$controller, 'export'])->defaults('workforce', $workforce)->name($prefix.'.export');
+        Route::post('/'.$prefix.'/bulk-approve', [$controller, 'bulkApprove'])->middleware('approver')->defaults('workforce', $workforce)->name($prefix.'.bulk.approve');
         Route::get('/'.$prefix.'/{payroll}/pdf', [$controller, 'pdf'])->defaults('workforce', $workforce)->name($prefix.'.pdf');
         Route::get('/'.$prefix.'/{payroll}', [$controller, 'show'])->defaults('workforce', $workforce)->name($prefix.'.show');
         Route::post('/'.$prefix, [$controller, 'store'])->defaults('workforce', $workforce)->name($prefix.'.store');
