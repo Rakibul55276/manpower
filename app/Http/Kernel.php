@@ -37,6 +37,7 @@ class Kernel extends HttpKernel
             \Illuminate\View\Middleware\ShareErrorsFromSession::class,
             \App\Http\Middleware\VerifyCsrfToken::class,
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
+            \App\Http\Middleware\AuditTransactions::class,
         ],
 
         'api' => [
@@ -56,6 +57,7 @@ class Kernel extends HttpKernel
         'active' => \App\Http\Middleware\EnsureActive::class,
         'auth.session' => \Illuminate\Session\Middleware\AuthenticateSession::class,
         'super_admin' => \App\Http\Middleware\SuperAdmin::class,
+        'approver' => \App\Http\Middleware\Approver::class,
         'auth' => \App\Http\Middleware\Authenticate::class,
         'auth.basic' => \Illuminate\Auth\Middleware\AuthenticateWithBasicAuth::class,
         'cache.headers' => \Illuminate\Http\Middleware\SetCacheHeaders::class,

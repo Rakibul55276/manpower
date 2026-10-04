@@ -6,7 +6,7 @@ A Laravel 8 application for XAMPP PHP 7.4, with separate rental manpower and own
 
 1. Start Apache and MySQL in XAMPP.
 2. Open http://localhost:8080/manpower/public/login.
-3. Sign in with `admin@manpower.local` or `manager@manpower.local`. The initial passwords are in the private `storage/app/setup-credentials.txt` file. The local accounts use the password requested during setup; passwords are hashed in MySQL.
+3. Sign in with username `admin` or `manager`. The initial passwords are in the private `storage/app/setup-credentials.txt` file. Passwords are hashed in MySQL.
 
 The database is `manpower`, using the local XAMPP root account. Connection details are in `.env`. Apache is configured on port 8080.
 

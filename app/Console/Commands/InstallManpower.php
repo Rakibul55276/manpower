@@ -16,15 +16,15 @@ class InstallManpower extends Command
     {
         if (User::where('role', 'super_admin')->exists()) { $this->info('A Super Admin already exists. No accounts were changed.'); return 0; }
         $credentials = DB::transaction(function () {
-            $company = Company::firstOrCreate(['name' => 'Manpower Operations']);
+            $company = Company::firstOrCreate(['name' => 'Manpower Operations'], ['location' => 'Riyadh, Saudi Arabia']);
             foreach (['General Worker', 'Electrician', 'Plumber', 'Welder', 'Driver', 'Supervisor', 'Accountant'] as $name) { Designation::firstOrCreate(['name' => $name]); }
             $lines = ['MANPOWER LOCAL SETUP', 'Sign in: '.config('app.url').'/login', 'Change these initial passwords after signing in.', ''];
-            foreach (['super_admin' => ['Super Admin', 'admin@manpower.local'], 'manager' => ['Manager', 'manager@manpower.local']] as $role => $account) {
-                if (User::where('email', $account[1])->exists()) { throw new \RuntimeException('Initial account email already exists. Create an administrator manually instead.'); }
+            foreach (['super_admin' => ['Super Admin', 'superadmin', 'superadmin@manpower.local'], 'admin' => ['Admin Approver', 'admin', 'admin@manpower.local'], 'manager' => ['Manager', 'manager', 'manager@manpower.local']] as $role => $account) {
+                if (User::where('username', $account[1])->orWhere('email', $account[2])->exists()) { throw new \RuntimeException('Initial account already exists. Create an administrator manually instead.'); }
                 $password = Str::random(20);
-                $user = User::create(['name' => $account[0], 'email' => $account[1], 'password' => Hash::make($password), 'role' => $role, 'is_active' => true]);
+                $user = User::create(['name' => $account[0], 'username' => $account[1], 'email' => $account[2], 'password' => Hash::make($password), 'role' => $role, 'is_active' => true]);
                 if ($role === 'manager') { $user->companies()->attach($company); }
-                $lines[] = $account[0].': '.$account[1]; $lines[] = 'Password: '.$password; $lines[] = '';
+                $lines[] = $account[0].' username: '.$account[1]; $lines[] = 'Password: '.$password; $lines[] = '';
             }
             return implode(PHP_EOL, $lines);
         });

@@ -16,7 +16,7 @@ class PayrollController extends Controller
     private function check(Payroll $payroll) { Access::company($payroll->company_id); abort_unless($payroll->employment_type === $this->workforce(), 404); }
     public function index(Request $request)
     {
-        $request->validate(['month' => 'nullable|date_format:Y-m', 'status' => 'nullable|in:draft,paid', 'company_id' => 'nullable|integer']);
+        $request->validate(['month' => 'nullable|date_format:Y-m', 'status' => 'nullable|in:pending,approved,paid', 'company_id' => 'nullable|integer', 'search' => 'nullable|string|max:100']);
         $workforce = $this->workforce(); $routePrefix = $this->prefix();
         $available = Payroll::where('employment_type', $workforce);
         if (!$request->user()->isAdmin()) { $available->whereIn('company_id', $request->user()->companies()->select('companies.id')); }
@@ -25,6 +25,15 @@ class PayrollController extends Controller
         if (!$request->user()->isAdmin()) { $query->whereIn('company_id', $request->user()->companies()->select('companies.id')); }
         if ($request->filled('status')) { $query->where('status', $request->status); }
         if ($request->filled('company_id')) { $query->where('company_id', $request->company_id); }
+        if ($request->filled('search')) {
+            $search = trim($request->search);
+            $query->where(function ($match) use ($search) {
+                $match->where('employee_name', 'like', '%'.$search.'%')
+                    ->orWhere('iqama_number', 'like', '%'.$search.'%')
+                    ->orWhere('company_name', 'like', '%'.$search.'%')
+                    ->orWhere('designation_name', 'like', '%'.$search.'%');
+            });
+        }
         $total = (clone $query)->sum('net_pay_cents');
         $payrolls = $query->orderBy('employee_name')->paginate(20)->withQueryString();
         $employees = Access::employees()->where('employment_type', $workforce)->with('company')->orderBy('name')->get();
@@ -47,11 +56,20 @@ class PayrollController extends Controller
             $base = $employee->employment_type === 'own' ? $employee->monthly_salary_cents : $approved->sum(function ($entry) { return $entry->regularPay(); });
             $overtime = $approved->sum(function ($entry) { return $entry->overtimePay(); });
             $allowance = Pay::units($data['allowance']); $deduction = Pay::units($data['deduction']);
-            if ($deduction > $base + $overtime + $allowance) { throw ValidationException::withMessages(['deduction' => 'Deductions cannot exceed gross salary plus allowances.']); }
+            $meal = $employee->employment_type === 'own' ? $employee->meal_allowance_cents : 0;
+            $transportation = $employee->employment_type === 'own' ? $employee->transportation_allowance_cents : 0;
+            $housing = $employee->employment_type === 'own' ? $employee->housing_allowance_cents : 0;
+            $medical = $employee->employment_type === 'own' ? $employee->medical_allowance_cents : 0;
+            $retirement = $employee->employment_type === 'own' ? $employee->retirement_insurance_cents : 0;
+            $tax = $employee->employment_type === 'own' ? $employee->tax_cents : 0;
+            $gross = $base + $overtime + $allowance + $meal + $transportation + $housing + $medical;
+            $totalDeductions = $deduction + $retirement + $tax;
+            if ($totalDeductions > $gross) { throw ValidationException::withMessages(['deduction' => 'Total deductions cannot exceed gross salary plus allowances.']); }
             $payroll = Payroll::create(['employee_id' => $employee->id, 'company_id' => $employee->company_id, 'month' => $data['month'], 'employment_type' => $employee->employment_type, 'salary_type' => $employee->salary_type,
-                'employee_name' => $employee->name, 'company_name' => $employee->company->name, 'designation_name' => $employee->designation->name, 'iqama_number' => $employee->iqama_number,
+                'employee_name' => $employee->name, 'company_name' => $employee->company->name, 'designation_name' => $employee->designation->name, 'directorate' => $employee->directorate, 'department' => $employee->department, 'iqama_number' => $employee->iqama_number,
                 'regular_units' => $approved->sum('regular_units'), 'overtime_units' => $approved->sum('overtime_units'), 'regular_pay_cents' => $base, 'overtime_pay_cents' => $overtime,
-                'allowance_cents' => $allowance, 'deduction_cents' => $deduction, 'net_pay_cents' => $base + $overtime + $allowance - $deduction, 'created_by' => auth()->id(), 'notes' => $data['notes'] ?? null]);
+                'allowance_cents' => $allowance, 'meal_allowance_cents' => $meal, 'transportation_allowance_cents' => $transportation, 'housing_allowance_cents' => $housing, 'medical_allowance_cents' => $medical,
+                'deduction_cents' => $deduction, 'retirement_insurance_cents' => $retirement, 'tax_cents' => $tax, 'net_pay_cents' => $gross - $totalDeductions, 'status' => 'pending', 'created_by' => auth()->id(), 'notes' => $data['notes'] ?? null]);
             Timesheet::whereIn('id', $approved->pluck('id'))->update(['payroll_id' => $payroll->id]);
             ActivityLog::record('Generated salary', 'Payslip #'.$payroll->id.' · '.$employee->name.' · '.$data['month']);
             return $payroll;
@@ -70,11 +88,12 @@ class PayrollController extends Controller
         $data = $request->validate(['allowance' => ['required', 'numeric', 'min:0', 'max:999999.99', 'regex:/^\d+(\.\d{1,2})?$/'], 'deduction' => ['required', 'numeric', 'min:0', 'max:999999.99', 'regex:/^\d+(\.\d{1,2})?$/'], 'notes' => 'nullable|string|max:2000']);
         DB::transaction(function () use ($payroll, $data) {
             $record = Payroll::lockForUpdate()->findOrFail($payroll->id);
-            abort_unless($record->status === 'draft', 403, 'Paid salaries are immutable.');
+            abort_unless($record->status === 'pending', 403, 'Only pending salaries can be adjusted.');
             $allowance = Pay::units($data['allowance']); $deduction = Pay::units($data['deduction']);
-            $gross = $record->regular_pay_cents + $record->overtime_pay_cents + $allowance;
-            if ($deduction > $gross) { throw ValidationException::withMessages(['deduction' => 'Deductions cannot exceed gross pay.']); }
-            $record->update(['allowance_cents' => $allowance, 'deduction_cents' => $deduction, 'net_pay_cents' => $gross - $deduction, 'notes' => $data['notes'] ?? null]);
+            $gross = $record->regular_pay_cents + $record->overtime_pay_cents + $allowance + $record->meal_allowance_cents + $record->transportation_allowance_cents + $record->housing_allowance_cents + $record->medical_allowance_cents;
+            $totalDeductions = $deduction + $record->retirement_insurance_cents + $record->tax_cents;
+            if ($totalDeductions > $gross) { throw ValidationException::withMessages(['deduction' => 'Total deductions cannot exceed gross pay.']); }
+            $record->update(['allowance_cents' => $allowance, 'deduction_cents' => $deduction, 'net_pay_cents' => $gross - $totalDeductions, 'notes' => $data['notes'] ?? null]);
             ActivityLog::record('Adjusted salary', 'Payslip #'.$record->id);
         });
         return back()->with('success', 'Salary adjustments saved.');
@@ -83,18 +102,29 @@ class PayrollController extends Controller
     {
         $this->check($payroll);
         DB::transaction(function () use ($payroll) {
-            $record = Payroll::lockForUpdate()->findOrFail($payroll->id); abort_unless($record->status === 'draft', 403);
+            $record = Payroll::lockForUpdate()->findOrFail($payroll->id); abort_unless($record->status === 'approved', 403);
             $record->update(['status' => 'paid', 'paid_at' => now(), 'paid_by' => auth()->id()]);
             ActivityLog::record('Marked salary paid', 'Payslip #'.$record->id.' · '.$record->employee_name);
         });
         return back()->with('success', 'Salary marked paid. This is a payment record; no bank transfer is made.');
+    }
+    public function approve(Payroll $payroll)
+    {
+        $this->check($payroll);
+        DB::transaction(function () use ($payroll) {
+            $record = Payroll::lockForUpdate()->findOrFail($payroll->id);
+            abort_unless($record->status === 'pending', 403, 'Only pending salaries can be approved.');
+            $record->update(['status' => 'approved', 'approved_by' => auth()->id(), 'approved_at' => now()]);
+            ActivityLog::record('Approved salary', 'Payslip #'.$record->id.' · '.$record->employee_name);
+        });
+        return back()->with('success', 'Salary approved and ready for payment.');
     }
     public function destroy(Payroll $payroll)
     {
         $this->check($payroll);
         DB::transaction(function () use ($payroll) {
             Employee::lockForUpdate()->findOrFail($payroll->employee_id);
-            $record = Payroll::lockForUpdate()->findOrFail($payroll->id); abort_unless($record->status === 'draft', 403, 'Paid salaries cannot be voided.');
+            $record = Payroll::lockForUpdate()->findOrFail($payroll->id); abort_unless($record->status === 'pending', 403, 'Only pending salaries can be voided.');
             $record->timesheets()->update(['payroll_id' => null]); $record->delete();
             ActivityLog::record('Voided draft salary', 'Payslip #'.$record->id.' · '.$record->employee_name);
         });

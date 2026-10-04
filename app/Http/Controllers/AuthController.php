@@ -9,9 +9,9 @@ class AuthController extends Controller
     public function form() { return view('auth.login'); }
     public function login(Request $request)
     {
-        $data = $request->validate(['email' => 'required|email', 'password' => 'required|string']);
+        $data = $request->validate(['username' => 'required|string', 'password' => 'required|string']);
         if (!Auth::attempt(array_merge($data, ['is_active' => true]))) {
-            return back()->withErrors(['email' => 'The email or password is incorrect, or the account is disabled.'])->withInput($request->only('email'));
+            return back()->withErrors(['username' => 'The username or password is incorrect, or the account is disabled.'])->withInput($request->only('username'));
         }
         $request->session()->regenerate();
         ActivityLog::record('Signed in', $request->user()->name);

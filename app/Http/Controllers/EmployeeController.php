@@ -27,7 +27,7 @@ class EmployeeController extends Controller
         $companies = Access::companies()->orderBy('name')->get();
         return view('employees.index', compact('employees', 'companies', 'workforce', 'routePrefix'));
     }
-    public function create() { return $this->form(new Employee(['status' => 'active', 'salary_type' => $this->workforce() === 'own' ? 'monthly' : 'hourly', 'overtime_multiplier_units' => 150, 'joined_on' => now()])); }
+    public function create() { return $this->form(new Employee(['status' => 'active', 'salary_type' => $this->workforce() === 'own' ? 'monthly' : 'hourly', 'regular_hours_units' => 800, 'overtime_multiplier_units' => 150, 'joined_on' => now()])); }
     public function edit(Employee $employee) { $this->check($employee); return $this->form($employee); }
     private function form($employee)
     {
@@ -49,13 +49,33 @@ class EmployeeController extends Controller
             'iqama_number' => ['required', 'regex:/^[0-9]{10}$/', Rule::unique('employees')->ignore($employee->id)],
             'passport_number' => ['required', 'regex:/^[A-Za-z0-9-]{5,30}$/', Rule::unique('employees')->ignore($employee->id)],
             'phone' => ['required', 'regex:/^\+?[0-9 ()-]{7,25}$/'],
+            'nationality' => 'nullable|string|max:100',
+            'personal_email' => ['nullable', 'email', 'max:255', Rule::unique('employees')->ignore($employee->id)],
+            'professional_summary' => 'nullable|string|max:2000',
+            'education' => 'nullable|string|max:2000',
+            'skills' => 'nullable|string|max:2000',
             'company_id' => 'required|exists:companies,id', 'designation_id' => 'required|exists:designations,id',
-            'previous_experience' => 'nullable|array|max:5', 'previous_experience.*' => 'nullable|string|max:2000',
+            'directorate' => 'nullable|string|max:150',
+            'department' => 'nullable|string|max:150',
+            'previous_experience' => 'nullable|array|max:5',
+            'previous_experience.*.company_name' => 'nullable|string|max:150',
+            'previous_experience.*.location' => 'nullable|string|max:150',
+            'previous_experience.*.position' => 'nullable|string|max:150',
+            'previous_experience.*.start_date' => 'nullable|date_format:Y-m-d',
+            'previous_experience.*.end_date' => 'nullable|date_format:Y-m-d|after_or_equal:previous_experience.*.start_date',
+            'previous_experience.*.responsibilities' => 'nullable|string|max:2000',
             'blood_group' => 'required|in:A+,A-,B+,B-,AB+,AB-,O+,O-',
             'salary_type' => 'required|in:hourly,monthly',
             'hourly_rate' => ['required', 'numeric', 'min:0.01', 'max:99999.99', 'regex:/^\d+(\.\d{1,2})?$/'],
+            'regular_hours' => ['required', 'numeric', 'min:0.01', 'max:24', 'regex:/^\d+(\.\d{1,2})?$/'],
             'monthly_salary' => ['required_if:salary_type,monthly', 'nullable', 'numeric', 'min:0.01', 'max:999999.99', 'regex:/^\d+(\.\d{1,2})?$/'],
-            'overtime_multiplier' => ['required', 'numeric', 'min:1', 'max:5', 'regex:/^\d+(\.\d{1,2})?$/'],
+            'meal_allowance' => ['nullable', 'numeric', 'min:0', 'max:999999.99', 'regex:/^\d+(\.\d{1,2})?$/'],
+            'transportation_allowance' => ['nullable', 'numeric', 'min:0', 'max:999999.99', 'regex:/^\d+(\.\d{1,2})?$/'],
+            'housing_allowance' => ['nullable', 'numeric', 'min:0', 'max:999999.99', 'regex:/^\d+(\.\d{1,2})?$/'],
+            'medical_allowance' => ['nullable', 'numeric', 'min:0', 'max:999999.99', 'regex:/^\d+(\.\d{1,2})?$/'],
+            'retirement_insurance' => ['nullable', 'numeric', 'min:0', 'max:999999.99', 'regex:/^\d+(\.\d{1,2})?$/'],
+            'tax' => ['nullable', 'numeric', 'min:0', 'max:999999.99', 'regex:/^\d+(\.\d{1,2})?$/'],
+            'overtime_multiplier' => ['nullable', 'required_if:salary_type,hourly', 'numeric', 'min:1', 'max:5', 'regex:/^\d+(\.\d{1,2})?$/'],
             'joined_on' => 'required|date_format:Y-m-d|before_or_equal:today', 'status' => 'required|in:active,inactive',
         ]);
         Access::company($data['company_id']);
@@ -67,11 +87,18 @@ class EmployeeController extends Controller
         $designation = Designation::findOrFail($data['designation_id']);
         if ((!$company->is_active && $employee->company_id != $company->id) || (!$designation->is_active && $employee->designation_id != $designation->id)) { return back()->withErrors(['company_id' => 'Choose an active company and designation.'])->withInput(); }
         $data['hourly_rate_cents'] = Pay::units($data['hourly_rate']);
+        $data['regular_hours_units'] = Pay::units($data['regular_hours']);
+        $data['overtime_rate_cents'] = $this->workforce() === 'own' ? Pay::units($data['hourly_rate']) : 0;
         $data['employment_type'] = $this->workforce();
         $data['monthly_salary_cents'] = $data['salary_type'] === 'monthly' ? Pay::units($data['monthly_salary']) : 0;
-        $data['overtime_multiplier_units'] = Pay::units($data['overtime_multiplier']);
-        $data['previous_experience'] = array_values(array_filter($data['previous_experience'] ?? [], function ($item) { return trim((string) $item) !== ''; }));
-        unset($data['photo'], $data['document'], $data['remove_document'], $data['hourly_rate'], $data['monthly_salary'], $data['overtime_multiplier']);
+        foreach (['meal_allowance', 'transportation_allowance', 'housing_allowance', 'medical_allowance', 'retirement_insurance', 'tax'] as $component) {
+            $data[$component.'_cents'] = $this->workforce() === 'own' ? Pay::units($data[$component] ?? 0) : 0;
+        }
+        $data['overtime_multiplier_units'] = $this->workforce() === 'own' ? 100 : Pay::units($data['overtime_multiplier']);
+        $data['previous_experience'] = array_values(array_filter($data['previous_experience'] ?? [], function ($entry) {
+            return collect($entry)->contains(function ($value) { return trim((string) $value) !== ''; });
+        }));
+        unset($data['photo'], $data['document'], $data['remove_document'], $data['hourly_rate'], $data['regular_hours'], $data['monthly_salary'], $data['meal_allowance'], $data['transportation_allowance'], $data['housing_allowance'], $data['medical_allowance'], $data['retirement_insurance'], $data['tax'], $data['overtime_multiplier']);
         $oldPhoto = $employee->photo_path;
         $oldDocument = $employee->document_path;
         $newDocument = $request->hasFile('document') ? $request->file('document')->store('employee-documents', 'local') : null;

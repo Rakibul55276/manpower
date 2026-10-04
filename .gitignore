@@ -8,6 +8,7 @@
 /storage/app/dompdf/
 /tmp/
 /vendor
+/.local-mysql
 .env
 .env.backup
 .phpunit.result.cache

@@ -17,14 +17,16 @@ class UserController extends Controller
     private function save(Request $request, User $user)
     {
         $data = $request->validate([
-            'name' => 'required|string|max:150', 'email' => ['required', 'email', 'max:150', Rule::unique('users')->ignore($user->id)],
+            'name' => 'required|string|max:150',
+            'username' => ['required', 'alpha_dash', 'max:50', Rule::unique('users')->ignore($user->id)],
             'password' => ($user->exists ? 'nullable' : 'required').'|string|min:10|confirmed',
-            'role' => 'required|in:super_admin,manager', 'is_active' => 'required|boolean',
+            'role' => 'required|in:super_admin,admin,manager', 'is_active' => 'required|boolean',
             'companies' => 'nullable|array', 'companies.*' => 'integer|distinct|exists:companies,id',
         ]);
         if ($user->id === auth()->id() && ($data['role'] !== 'super_admin' || !$data['is_active'])) { return back()->withErrors(['role' => 'You cannot disable or demote your own account.'])->withInput($request->except('password', 'password_confirmation')); }
         if ($data['role'] === 'manager' && empty($data['companies'])) { return back()->withErrors(['companies' => 'Assign at least one company to a manager.'])->withInput($request->except('password', 'password_confirmation')); }
         $companies = $data['companies'] ?? []; unset($data['companies']);
+        $data['email'] = strtolower($data['username']).'@manpower.local';
         if (!empty($data['password'])) { $data['password'] = Hash::make($data['password']); $data['remember_token'] = null; } else { unset($data['password']); }
         DB::transaction(function () use ($user, $data, $companies) {
             $user->fill($data)->save(); $user->companies()->sync($data['role'] === 'manager' ? $companies : []);

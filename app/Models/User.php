@@ -12,7 +12,9 @@ class User extends Authenticatable
     use HasFactory, Notifiable;
 
     public function companies() { return $this->belongsToMany(Company::class); }
-    public function isAdmin() { return $this->role === 'super_admin'; }
+    public function isAdmin() { return in_array($this->role, ['admin', 'super_admin'], true); }
+    public function isSuperAdmin() { return $this->role === 'super_admin'; }
+    public function canApprove() { return in_array($this->role, ['admin', 'super_admin'], true); }
     public function canAccessCompany($companyId) { return $this->isAdmin() || $this->companies()->where('companies.id', $companyId)->exists(); }
 
     /**
@@ -21,7 +23,7 @@ class User extends Authenticatable
      * @var array
      */
     protected $fillable = [
-        'name', 'email', 'password', 'role', 'is_active',
+        'name', 'username', 'email', 'password', 'role', 'is_active',
     ];
 
     /**

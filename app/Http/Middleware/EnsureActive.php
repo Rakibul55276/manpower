@@ -10,7 +10,7 @@ class EnsureActive
             Auth::logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();
-            return redirect()->route('login')->withErrors(['email' => 'Your account has been disabled. Contact the Super Admin.']);
+            return redirect()->route('login')->withErrors(['username' => 'Your account has been disabled. Contact the Super Admin.']);
         }
         return $next($request);
     }

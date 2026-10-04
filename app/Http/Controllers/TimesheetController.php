@@ -6,6 +6,7 @@ use App\Models\Payroll;
 use App\Models\ActivityLog;
 use App\Services\Access;
 use App\Services\Pay;
+use App\Services\Documents;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -18,15 +19,89 @@ class TimesheetController extends Controller
     {
         $request->validate(['month' => 'nullable|date_format:Y-m', 'status' => 'nullable|in:pending,approved,rejected', 'employee_id' => 'nullable|integer', 'company_id' => 'nullable|integer']);
         $month = $request->month ?? now()->format('Y-m'); $workforce = $this->workforce(); $routePrefix = $this->prefix();
-        $query = Timesheet::with(['employee.company', 'employee.designation', 'creator'])->whereIn('employee_id', Access::employees()->where('employment_type', $workforce)->select('id'))->where('work_date', 'like', $month.'%');
+        $query = $this->filteredQuery($request, $month, $workforce);
+        $totals = ['regular' => (clone $query)->sum('regular_units'), 'overtime' => (clone $query)->sum('overtime_units')];
+        $timesheets = $query->orderByDesc('work_date')->paginate(20)->withQueryString();
+        $employees = Access::employees()->where('employment_type', $workforce)->with(['company', 'designation'])->orderBy('name')->get();
+        $companies = Access::companies()->orderBy('name')->get();
+        $directoryEmployees = $employees;
+        if ($request->filled('company_id')) { $directoryEmployees = $directoryEmployees->where('company_id', (int) $request->company_id); }
+        $directoryEntries = $this->filteredQuery(new Request($request->only(['status', 'company_id'])), $month, $workforce)->get()->groupBy('employee_id');
+        $employeeDirectory = $directoryEmployees->map(function ($employee) use ($directoryEntries) {
+            $entries = $directoryEntries->get($employee->id, collect());
+            return ['employee' => $employee, 'entries' => $entries->count(), 'regular' => $entries->sum('regular_units'), 'overtime' => $entries->sum('overtime_units'), 'pending' => $entries->where('status', 'pending')->count()];
+        })->values();
+        return view('timesheets.index', compact('timesheets', 'employees', 'companies', 'month', 'workforce', 'routePrefix', 'totals', 'employeeDirectory'));
+    }
+    private function filteredQuery(Request $request, $month, $workforce)
+    {
+        $query = Timesheet::with(['employee.company', 'employee.designation', 'creator', 'reviewer'])
+            ->whereIn('employee_id', Access::employees()->where('employment_type', $workforce)->select('id'))
+            ->where('work_date', 'like', $month.'%');
         if ($request->filled('status')) { $query->where('status', $request->status); }
         if ($request->filled('employee_id')) { $query->where('employee_id', $request->employee_id); }
         if ($request->filled('company_id')) { $query->whereHas('employee', function ($q) use ($request) { $q->where('company_id', $request->company_id); }); }
-        $totals = ['regular' => (clone $query)->sum('regular_units'), 'overtime' => (clone $query)->sum('overtime_units')];
-        $timesheets = $query->orderByDesc('work_date')->paginate(20)->withQueryString();
-        $employees = Access::employees()->where('employment_type', $workforce)->orderBy('name')->get();
-        $companies = Access::companies()->orderBy('name')->get();
-        return view('timesheets.index', compact('timesheets', 'employees', 'companies', 'month', 'workforce', 'routePrefix', 'totals'));
+        return $query;
+    }
+    public function pdf(Request $request)
+    {
+        $request->validate(['month' => 'nullable|date_format:Y-m', 'status' => 'nullable|in:pending,approved,rejected', 'employee_id' => 'nullable|integer', 'company_id' => 'nullable|integer']);
+        $month = $request->month ?? now()->format('Y-m');
+        $workforce = $this->workforce();
+        $entries = $this->filteredQuery($request, $month, $workforce)->orderBy('work_date')->orderBy('employee_id')->get();
+        $totals = ['regular' => $entries->sum('regular_units'), 'overtime' => $entries->sum('overtime_units')];
+        $rows = $entries->groupBy('employee_id')->map(function ($employeeEntries) {
+            $first = $employeeEntries->first();
+            return [
+                'employee' => $first->employee,
+                'days' => $employeeEntries->pluck('work_date')->map->format('Y-m-d')->unique()->count(),
+                'first_date' => $employeeEntries->min('work_date'),
+                'last_date' => $employeeEntries->max('work_date'),
+                'regular' => $employeeEntries->sum('regular_units'),
+                'overtime' => $employeeEntries->sum('overtime_units'),
+                'approved' => $employeeEntries->where('status', 'approved')->count(),
+                'pending' => $employeeEntries->where('status', 'pending')->count(),
+                'rejected' => $employeeEntries->where('status', 'rejected')->count(),
+            ];
+        })->sortBy(function ($row) { return $row['employee']->name; })->values();
+        $filters = ['status' => $request->status, 'employee_id' => $request->employee_id, 'company_id' => $request->company_id];
+        $bytes = Documents::render('pdf.timesheet', compact('entries', 'rows', 'totals', 'month', 'workforce', 'filters'), 'A3', 'landscape');
+        return Documents::download($bytes, ($workforce === 'own' ? 'attendance-' : 'timesheet-').$month.'.pdf');
+    }
+    public function employeePdfForm(Employee $employee)
+    {
+        Access::employee($employee);
+        abort_unless($employee->employment_type === $this->workforce(), 404);
+        $months = Timesheet::where('employee_id', $employee->id)->orderByDesc('work_date')->get('work_date')->map(function ($entry) {
+            return $entry->work_date->format('Y-m');
+        })->unique()->values();
+        $routePrefix = $this->prefix();
+        $employee->loadMissing(['company', 'designation']);
+        return view('timesheets.employee-pdf-form', compact('employee', 'months', 'routePrefix'));
+    }
+    public function employeePdf(Request $request, Employee $employee)
+    {
+        Access::employee($employee);
+        abort_unless($employee->employment_type === $this->workforce(), 404);
+        $data = $request->validate([
+            'months' => 'required|array|min:1|max:12',
+            'months.*' => 'required|date_format:Y-m|distinct',
+            'orientation' => 'required|in:portrait,landscape',
+        ]);
+        $available = Timesheet::where('employee_id', $employee->id)->get('work_date')->map(function ($entry) { return $entry->work_date->format('Y-m'); })->unique();
+        $months = collect($data['months'])->unique()->sort()->values();
+        if ($months->diff($available)->isNotEmpty()) { throw ValidationException::withMessages(['months' => 'Choose only months that contain timesheet entries for this employee.']); }
+        $entries = Timesheet::with(['creator', 'reviewer'])->where('employee_id', $employee->id)->where(function ($query) use ($months) {
+            foreach ($months as $month) { $query->orWhere('work_date', 'like', $month.'%'); }
+        })->orderBy('work_date')->get();
+        $sheets = $months->map(function ($month) use ($entries) {
+            $monthEntries = $entries->filter(function ($entry) use ($month) { return $entry->work_date->format('Y-m') === $month; })->values();
+            return ['month' => $month, 'entries' => $monthEntries, 'regular' => $monthEntries->sum('regular_units'), 'overtime' => $monthEntries->sum('overtime_units')];
+        });
+        $employee->loadMissing(['company', 'designation']);
+        $orientation = $data['orientation'];
+        $bytes = Documents::render('pdf.employee-timesheet', compact('employee', 'sheets', 'orientation'), 'A4', $orientation);
+        return Documents::download($bytes, 'timesheet-'.$employee->id.'-'.$months->first().($months->count() > 1 ? '-to-'.$months->last() : '').'.pdf');
     }
     public function create() { return $this->form(new Timesheet(['work_date' => now(), 'regular_units' => 800, 'overtime_units' => 0])); }
     public function edit(Timesheet $timesheet)
@@ -89,7 +164,7 @@ class TimesheetController extends Controller
             'overtime_hours' => ['required', 'numeric', 'min:0', 'max:24', 'regex:/^\d+(\.\d{1,2})?$/'],
             'notes' => 'nullable|string|max:1000',
         ]);
-        $regular = Pay::units($data['regular_hours']); $overtime = Pay::units($data['overtime_hours']);
+        $regular = $this->workforce() === 'own' && $request->boolean('attendance_mode') ? ($request->boolean('attended') ? 800 : 0) : Pay::units($data['regular_hours']); $overtime = Pay::units($data['overtime_hours']);
         if ($regular + $overtime === 0 || $regular + $overtime > 2400) { return back()->withErrors(['regular_hours' => 'Total hours must be greater than zero and no more than 24 per day.'])->withInput(); }
         DB::transaction(function () use ($data, $timesheet, $regular, $overtime) {
             // The employee row serializes payroll generation and all timesheet changes.
@@ -107,7 +182,7 @@ class TimesheetController extends Controller
             if ($timesheet->exists) { $this->unlocked($employee, $timesheet->work_date->format('Y-m-d')); }
             $timesheet->fill(['employee_id' => $employee->id, 'work_date' => $data['work_date'], 'regular_units' => $regular, 'overtime_units' => $overtime, 'notes' => $data['notes'] ?? null,
                 'status' => 'pending', 'review_note' => null, 'reviewed_by' => null, 'reviewed_at' => null]);
-            if (!$timesheet->exists) { $timesheet->fill(['created_by' => auth()->id(), 'hourly_rate_cents' => $employee->hourly_rate_cents, 'overtime_multiplier_units' => $employee->overtime_multiplier_units]); }
+            if (!$timesheet->exists) { $timesheet->fill(['created_by' => auth()->id(), 'hourly_rate_cents' => $employee->hourly_rate_cents, 'overtime_rate_cents' => $employee->overtime_rate_cents, 'overtime_multiplier_units' => $employee->overtime_multiplier_units]); }
             $timesheet->save(); ActivityLog::record('Saved hours', 'Timesheet #'.$timesheet->id.' · '.$employee->name.' · '.$data['work_date']);
         });
         return redirect()->route($this->prefix().'.index')->with('success', 'Hours saved and submitted for Super Admin approval.');
@@ -116,6 +191,7 @@ class TimesheetController extends Controller
     {
         $this->check($timesheet);
         $data = $request->validate(['status' => 'required|in:approved,rejected,pending', 'review_note' => 'required_if:status,rejected,pending|nullable|string|max:1000']);
+        if ($data['status'] === 'pending') { abort_unless($request->user()->isSuperAdmin(), 403, 'Only the Super Admin can reopen approved timesheets.'); }
         DB::transaction(function () use ($timesheet, $data) {
             $employee = Employee::lockForUpdate()->findOrFail($timesheet->employee_id);
             $entry = Timesheet::lockForUpdate()->findOrFail($timesheet->id);
@@ -130,6 +206,32 @@ class TimesheetController extends Controller
             ActivityLog::record($data['status'] === 'pending' ? 'Reopened hours' : ucfirst($data['status']).' hours', 'Timesheet #'.$entry->id.' · '.$employee->name);
         });
         return back()->with('success', 'Entry '.$data['status'].'.');
+    }
+    public function bulkApprove(Request $request)
+    {
+        $data = $request->validate([
+            'timesheet_ids' => 'required|array|min:1|max:200',
+            'timesheet_ids.*' => 'required|integer|distinct|exists:timesheets,id',
+        ], ['timesheet_ids.required' => 'Select at least one pending entry to approve.']);
+
+        $ids = collect($data['timesheet_ids'])->map(function ($id) { return (int) $id; })->unique()->values();
+        DB::transaction(function () use ($ids) {
+            $entries = Timesheet::with('employee')->whereIn('id', $ids)->lockForUpdate()->get();
+            if ($entries->count() !== $ids->count()) { throw ValidationException::withMessages(['timesheet_ids' => 'One or more selected entries no longer exist.']); }
+
+            foreach ($entries as $entry) {
+                $this->check($entry);
+                if ($entry->status !== 'pending' || $entry->payroll_id) {
+                    throw ValidationException::withMessages(['timesheet_ids' => 'Only pending, payroll-unlocked entries can be bulk approved. Refresh the page and try again.']);
+                }
+                $this->unlocked($entry->employee, $entry->work_date->format('Y-m-d'));
+            }
+
+            Timesheet::whereIn('id', $ids)->update(['status' => 'approved', 'review_note' => null, 'reviewed_by' => auth()->id(), 'reviewed_at' => now()]);
+            ActivityLog::record('Bulk approved hours', $ids->count().' entries · Timesheets #'.$ids->take(20)->implode(', #'));
+        });
+
+        return back()->with('success', $ids->count().' time entries approved successfully.');
     }
     public function destroy(Timesheet $timesheet)
     {

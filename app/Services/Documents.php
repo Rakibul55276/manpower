@@ -9,7 +9,7 @@ use setasign\Fpdi\Fpdi;
 use setasign\Fpdi\PdfParser\StreamReader;
 class Documents
 {
-    public static function render($view, $data)
+    public static function render($view, $data, $paper = 'A4', $orientation = 'portrait')
     {
         $cache = storage_path('app/dompdf');
         if (!is_dir($cache)) { mkdir($cache, 0755, true); }
@@ -20,9 +20,9 @@ class Documents
         $options->set('isJavascriptEnabled', false);
         $options->set('chroot', storage_path('app'));
         $options->set('fontDir', $cache); $options->set('fontCache', $cache); $options->set('tempDir', $cache);
-        $pdf = new Dompdf($options); $pdf->setPaper('A4'); $pdf->loadHtml(view($view, $data)->render(), 'UTF-8'); $pdf->render();
+        $pdf = new Dompdf($options); $pdf->setPaper($paper, $orientation); $pdf->loadHtml(view($view, $data)->render(), 'UTF-8'); $pdf->render();
         $canvas = $pdf->getCanvas();
-        $canvas->page_text(40, 810, 'Manpower  |  Page {PAGE_NUM} of {PAGE_COUNT}', $pdf->getFontMetrics()->getFont('DejaVu Sans'), 8, [0.4, 0.5, 0.5]);
+        $canvas->page_text(40, $canvas->get_height() - 30, 'Manpower  |  Page {PAGE_NUM} of {PAGE_COUNT}', $pdf->getFontMetrics()->getFont('DejaVu Sans'), 8, [0.4, 0.5, 0.5]);
         return $pdf->output();
     }
     public static function validateAttachment($path)
@@ -41,7 +41,7 @@ class Documents
             $source = @imagecreatefromstring(file_get_contents($path));
             if ($source) { ob_start(); imagepng($source); $bytes = ob_get_clean(); imagedestroy($source); $photo = 'data:image/png;base64,'.base64_encode($bytes); }
         }
-        $generated = static::render('pdf.cv', compact('employee', 'photo'));
+        $generated = static::render('pdf.cv-professional', compact('employee', 'photo'));
         if (!$employee->document_path) { return $generated; }
         if (!Storage::disk('local')->exists($employee->document_path)) { throw new \RuntimeException('The supporting PDF is missing. Re-upload it from the employee profile.'); }
         $merged = new Fpdi; $merged->SetTitle($employee->name.' - Curriculum Vitae'); $merged->SetAuthor('Manpower');
@@ -55,7 +55,13 @@ class Documents
         }
         return $merged->Output('S');
     }
-    public static function payslip(Payroll $payroll) { $payroll->loadMissing('timesheets'); return static::render('pdf.payslip', compact('payroll')); }
+    public static function payslip(Payroll $payroll)
+    {
+        $payroll->loadMissing('approver');
+        return $payroll->employment_type === 'own'
+            ? static::render('pdf.payslip-own', compact('payroll'), 'A4', 'landscape')
+            : static::render('pdf.payslip', compact('payroll'));
+    }
     public static function download($bytes, $filename)
     {
         return response($bytes, 200, ['Content-Type' => 'application/pdf', 'Content-Disposition' => 'attachment; filename="'.$filename.'"', 'Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff']);

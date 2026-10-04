@@ -17,8 +17,9 @@ class DemoManpower extends Command
     public function handle()
     {
         $admin = User::where('role', 'super_admin')->firstOrFail();
-        $manager = User::where('email', 'manager@manpower.local')->firstOrFail();
-        $companies = collect(['Gulf Construction', 'Riyadh Facilities', 'Eastern Engineering', 'Jeddah Logistics', 'Desert Industrial'])->map(function ($name) { return Company::firstOrCreate(['name' => ''.$name]); });
+        $manager = User::where('username', 'manager')->firstOrFail();
+        $companyLocations = ['Gulf Construction' => 'Dammam, Saudi Arabia', 'Riyadh Facilities' => 'Riyadh, Saudi Arabia', 'Eastern Engineering' => 'Al Khobar, Saudi Arabia', 'Jeddah Logistics' => 'Jeddah, Saudi Arabia', 'Desert Industrial' => 'Jubail, Saudi Arabia'];
+        $companies = collect($companyLocations)->map(function ($location, $name) { return Company::firstOrCreate(['name' => $name], ['location' => $location]); })->values();
         $designations = collect(['General Worker', 'Electrician', 'Plumber', 'Welder', 'Driver', 'Supervisor', 'Accountant'])->map(function ($name) { return Designation::firstOrCreate(['name' => $name]); });
         $manager->companies()->syncWithoutDetaching($companies->take(3)->pluck('id')->all());
         $firstNames = ['Ahmed', 'Mohammed', 'Abdul', 'Omar', 'Hassan', 'Imran', 'Rakib', 'Karim', 'Yusuf', 'Ali', 'Bilal', 'Naeem', 'Rafiq', 'Sajid', 'Faisal', 'Salman', 'Ibrahim', 'Khalid', 'Farhan', 'Tariq'];
@@ -47,7 +48,10 @@ class DemoManpower extends Command
                     'phone' => '+966500'.str_pad($index, 6, '0', STR_PAD_LEFT), 'company_id' => $companies[($index - 1) % 5]->id, 'designation_id' => $designations[($index - 1) % 7]->id,
                     'blood_group' => $bloodGroups[($index - 1) % 8], 'employment_type' => $own ? 'own' : 'rental', 'salary_type' => $own ? 'monthly' : 'hourly', 'hourly_rate_cents' => $rate,
                     'monthly_salary_cents' => $own ? 350000 + (($index % 8) * 50000) : 0, 'overtime_multiplier_units' => 150,
-                    'previous_experience' => ['Worked on commercial construction and facility maintenance projects for '.(2 + ($index % 8)).' years.', 'Previous role: '.$designations[($index - 1) % 7]->name.'. Tasks included safety checks, teamwork, and daily reporting.'],
+                    'nationality' => 'Saudi Arabia', 'personal_email' => 'employee'.$index.'@example.test',
+                    'professional_summary' => 'Reliable '.$designations[($index - 1) % 7]->name.' experienced in safe site operations, teamwork, and daily reporting.',
+                    'education' => 'Technical training and workplace safety certification.', 'skills' => 'Safety awareness, teamwork, communication, daily reporting',
+                    'previous_experience' => [['company_name' => 'Previous Employer', 'location' => 'Riyadh, Saudi Arabia', 'position' => $designations[($index - 1) % 7]->name, 'start_date' => now()->subYears(2 + ($index % 8))->format('Y-m-d'), 'end_date' => now()->subYear()->format('Y-m-d'), 'responsibilities' => 'Commercial construction and facility maintenance, safety checks, teamwork, and daily reporting.']],
                     'joined_on' => now()->subYear()->startOfYear()->addDays($index)->format('Y-m-d'), 'status' => $index > 95 ? 'inactive' : 'active', 'created_by' => $admin->id,
                 ]);
                 if ($employee->wasRecentlyCreated) { $created++; }

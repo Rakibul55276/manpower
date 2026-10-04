@@ -7,10 +7,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const end = form.querySelector('#range_end');
     const message = form.querySelector('[data-hours-message]');
     const units = value => Math.round(Number(value || 0) * 100);
+    const weekday = value => value ? new Date(value + 'T00:00:00Z').toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' }) : '—';
+    const enhanceRow = row => {
+        const dateInput = row.querySelector('input[type="date"]');
+        let dayCell = row.querySelector('[data-weekday]');
+        if (!dayCell) { dayCell = document.createElement('td'); dayCell.dataset.weekday = ''; dateInput.closest('td').after(dayCell); }
+        dayCell.textContent = weekday(dateInput.value);
+    };
+    const header = rows.closest('table').querySelector('thead tr');
+    if (header && !header.querySelector('[data-weekday-heading]')) { const th = document.createElement('th'); th.dataset.weekdayHeading = ''; th.textContent = 'Day'; header.children[0].after(th); }
     const notify = text => { message.textContent = text; message.hidden = !text; };
     const refresh = () => {
         let total = 0;
         Array.from(rows.children).forEach((row, index) => {
+            enhanceRow(row);
             const fields = row.querySelectorAll('input');
             ['work_date', 'regular_hours', 'overtime_hours'].forEach((key, i) => { fields[i].name = `entries[${index}][${key}]`; });
             total += units(fields[1].value) + units(fields[2].value);
@@ -30,6 +40,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const cell = document.createElement('td'); const remove = document.createElement('button');
         remove.type = 'button'; remove.className = 'btn danger small'; remove.textContent = 'Remove'; remove.dataset.removeHoursDate = '';
         cell.append(remove); row.append(cell); rows.append(row);
+        enhanceRow(row);
     };
     form.querySelector('[data-generate-hours]').addEventListener('click', () => {
         if (!start.value || !end.value || start.value > end.value || end.value > end.max) { notify('Select a valid date range ending no later than today.'); return; }
@@ -46,7 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     form.querySelector('[data-add-hours-date]').addEventListener('click', () => { if (rows.children.length < 120) { add(); refresh(); rows.lastElementChild.querySelector('input').focus(); } });
     rows.addEventListener('click', event => { if (event.target.closest('[data-remove-hours-date]')) { event.target.closest('tr').remove(); refresh(); } });
-    rows.addEventListener('input', refresh); target.addEventListener('input', refresh);
+    rows.addEventListener('input', refresh); rows.addEventListener('change', refresh); target.addEventListener('input', refresh);
     form.addEventListener('submit', event => {
         const dates = new Set(); let total = 0; let error = rows.children.length ? '' : 'Generate dates or add at least one date.';
         Array.from(rows.children).forEach(row => {
