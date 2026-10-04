@@ -47,6 +47,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         applySectionState();
     });
+    document.querySelectorAll('.stat-link[href^="#"]').forEach(link => {
+        const targetId = link.getAttribute('href').slice(1);
+        if (targetId === 'payroll-directory' && !document.getElementById(targetId)) {
+            const directory = document.querySelector('.filters')?.closest('.card');
+            if (directory) directory.id = targetId;
+        }
+    });
     document.querySelectorAll('form[data-confirm]').forEach(form => form.addEventListener('submit', event => { if (!window.confirm(form.dataset.confirm)) event.preventDefault(); }));
     document.querySelectorAll('[data-print]').forEach(button => button.addEventListener('click', () => window.print()));
     const employeeSearch = document.querySelector('[data-employee-search]');

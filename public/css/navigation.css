@@ -46,6 +46,40 @@
     display: none;
 }
 
+html {
+    scroll-behavior: smooth;
+}
+
+.stat-link {
+    display: block;
+    color: var(--ink);
+    text-decoration: none;
+    cursor: pointer;
+    transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+
+.stat-link:hover,
+.stat-link:focus-visible {
+    color: var(--ink);
+    text-decoration: none;
+    transform: translateY(-2px);
+    border-color: #b8d5ce;
+    box-shadow: 0 8px 20px rgba(16, 45, 50, .09);
+}
+
+.stat-link.accent,
+.stat-link.accent:hover,
+.stat-link.accent:focus-visible {
+    color: white;
+}
+
+#directory-results,
+#payroll-directory,
+#customize-report,
+#report-results {
+    scroll-margin-top: 18px;
+}
+
 @media (min-width: 761px) {
     .sidebar,
     .app-shell {

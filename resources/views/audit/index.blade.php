@@ -8,10 +8,10 @@
 @endsection
 @section('content')
 <div class="grid-2" style="margin-bottom:22px">
-    <div class="stat accent"><div class="label">Selected report</div><div class="value" style="font-size:22px">{{ $reportTitle }}</div><div class="note">{{ $filters['from'] }} through {{ $filters['to'] }}</div></div>
-    <div class="stat"><div class="label">Matching records</div><div class="value">{{ number_format($total) }}</div><div class="note">Filtered across {{ empty($filters['employment_type']) ? 'both employee types' : $filters['employment_type'].' employees' }}</div></div>
+    <a class="stat accent stat-link" href="#customize-report"><div class="label">Selected report</div><div class="value" style="font-size:22px">{{ $reportTitle }}</div><div class="note">{{ $filters['from'] }} through {{ $filters['to'] }} · Customize →</div></a>
+    <a class="stat stat-link" href="#report-results"><div class="label">Matching records</div><div class="value">{{ number_format($total) }}</div><div class="note">Filtered across {{ empty($filters['employment_type']) ? 'both employee types' : $filters['employment_type'].' employees' }} · View results →</div></a>
 </div>
-<div class="card">
+<div class="card" id="customize-report">
     <div class="card-head"><h2>Customize report</h2><span class="badge">Rental & own employees</span></div>
     <form method="GET" action="{{ route('audit.index') }}">
         <div class="filters">
@@ -34,7 +34,7 @@
         <div class="form-footer" style="padding:0 23px 20px"><a class="btn secondary" href="{{ route('audit.index') }}">Clear filters</a><button class="btn">Generate report</button></div>
     </form>
 </div>
-<div class="card">
+<div class="card" id="report-results">
     <div class="card-head"><h2>{{ $reportTitle }}</h2><span class="badge">{{ number_format($total) }} records</span></div>
     <div class="table-wrap"><table><thead><tr>@foreach($headings as $heading)<th>{{ $heading }}</th>@endforeach</tr></thead><tbody>
     @forelse($rows as $row)<tr>@foreach($row as $value)<td class="wrap">{{ $value === null || $value === '' ? '—' : $value }}</td>@endforeach</tr>
