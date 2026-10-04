@@ -36,9 +36,23 @@ class PayrollController extends Controller
         }
         $total = (clone $query)->sum('net_pay_cents');
         $payrolls = $query->orderBy('employee_name')->paginate(20)->withQueryString();
-        $employees = Access::employees()->where('employment_type', $workforce)->with('company')->orderBy('name')->get();
+        $employeeQuery = Access::employees()->where('employment_type', $workforce)->with(['company', 'designation'])->orderBy('name');
+        if ($request->filled('company_id')) { $employeeQuery->where('company_id', (int) $request->company_id); }
+        if ($request->filled('search')) {
+            $search = trim($request->search);
+            $employeeQuery->where(function ($match) use ($search) { $match->where('name', 'like', '%'.$search.'%')->orWhere('iqama_number', 'like', '%'.$search.'%')->orWhereHas('company', function ($company) use ($search) { $company->where('name', 'like', '%'.$search.'%'); })->orWhereHas('designation', function ($designation) use ($search) { $designation->where('name', 'like', '%'.$search.'%'); }); });
+        }
+        $directoryEmployees = $employeeQuery->paginate(25, ['*'], 'directory_page')->withQueryString();
+        $directoryPayrollQuery = Payroll::where('employment_type', $workforce)->where('month', $month);
+        if (!$request->user()->isAdmin()) { $directoryPayrollQuery->whereIn('company_id', $request->user()->companies()->select('companies.id')); }
+        $directoryPayrolls = $directoryPayrollQuery->whereIn('employee_id', $directoryEmployees->pluck('id'))->get()->keyBy('employee_id');
+        $pendingByEmployee = Timesheet::whereIn('employee_id', $directoryEmployees->pluck('id'))->where('work_date', 'like', $month.'%')->where('status', 'pending')->selectRaw('employee_id, COUNT(*) as pending_count')->groupBy('employee_id')->pluck('pending_count', 'employee_id');
+        $payrollDirectory = $directoryEmployees->getCollection()->map(function ($employee) use ($directoryPayrolls, $pendingByEmployee) {
+            return ['employee' => $employee, 'payroll' => $directoryPayrolls->get($employee->id), 'pending' => (int) ($pendingByEmployee[$employee->id] ?? 0)];
+        })->values();
+        $employees = Access::employees()->where('employment_type', $workforce)->where('status', 'active')->with('company')->when($request->filled('search'), function ($employeeQuery) use ($request) { $search = trim($request->search); $employeeQuery->where(function ($match) use ($search) { $match->where('name', 'like', '%'.$search.'%')->orWhere('iqama_number', 'like', '%'.$search.'%')->orWhereHas('company', function ($company) use ($search) { $company->where('name', 'like', '%'.$search.'%'); }); }); })->orderBy('name')->limit(50)->get();
         $companies = Access::companies()->orderBy('name')->get();
-        return view('payrolls.index', compact('month', 'workforce', 'routePrefix', 'payrolls', 'employees', 'companies', 'total'));
+        return view('payrolls.index', compact('month', 'workforce', 'routePrefix', 'payrolls', 'employees', 'companies', 'total', 'payrollDirectory', 'directoryEmployees'));
     }
     public function store(Request $request)
     {
@@ -50,7 +64,12 @@ class PayrollController extends Controller
             if ($employee->joined_on->format('Y-m') > $data['month']) { throw ValidationException::withMessages(['month' => 'The employee had not joined in this month.']); }
             if (Payroll::where('employee_id', $employee->id)->where('month', $data['month'])->exists()) { throw ValidationException::withMessages(['month' => 'Payroll already exists for this employee and month.']); }
             $entries = Timesheet::where('employee_id', $employee->id)->where('work_date', 'like', $data['month'].'%')->lockForUpdate()->get();
-            if ($entries->where('status', 'pending')->isNotEmpty()) { throw ValidationException::withMessages(['month' => 'Review all pending entries for this employee and month before generating payroll.']); }
+            $pending = $entries->where('status', 'pending')->sortBy('work_date');
+            if ($pending->isNotEmpty()) {
+                $dates = $pending->take(5)->map(function ($entry) { return $entry->work_date->format('d M'); })->implode(', ');
+                $more = $pending->count() > 5 ? ' and '.($pending->count() - 5).' more' : '';
+                throw ValidationException::withMessages(['month' => $pending->count().' pending '.($pending->count() === 1 ? 'day' : 'days').' must be reviewed: '.$dates.$more.'.']);
+            }
             $approved = $entries->where('status', 'approved');
             if ($employee->employment_type === 'rental' && $approved->isEmpty()) { throw ValidationException::withMessages(['month' => 'Rental payroll requires approved timesheet hours.']); }
             $base = $employee->employment_type === 'own' ? $employee->monthly_salary_cents : $approved->sum(function ($entry) { return $entry->regularPay(); });

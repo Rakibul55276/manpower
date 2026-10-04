@@ -17,21 +17,26 @@ class TimesheetController extends Controller
     private function check(Timesheet $timesheet) { Access::employee($timesheet->employee); abort_unless($timesheet->employee->employment_type === $this->workforce(), 404); }
     public function index(Request $request)
     {
-        $request->validate(['month' => 'nullable|date_format:Y-m', 'status' => 'nullable|in:pending,approved,rejected', 'employee_id' => 'nullable|integer', 'company_id' => 'nullable|integer']);
+        $request->validate(['month' => 'nullable|date_format:Y-m', 'status' => 'nullable|in:pending,approved,rejected', 'employee_id' => 'nullable|integer', 'company_id' => 'nullable|integer', 'employee_search' => 'nullable|string|max:100']);
         $month = $request->month ?? now()->format('Y-m'); $workforce = $this->workforce(); $routePrefix = $this->prefix();
         $query = $this->filteredQuery($request, $month, $workforce);
         $totals = ['regular' => (clone $query)->sum('regular_units'), 'overtime' => (clone $query)->sum('overtime_units')];
         $timesheets = $query->orderByDesc('work_date')->paginate(20)->withQueryString();
-        $employees = Access::employees()->where('employment_type', $workforce)->with(['company', 'designation'])->orderBy('name')->get();
         $companies = Access::companies()->orderBy('name')->get();
-        $directoryEmployees = $employees;
-        if ($request->filled('company_id')) { $directoryEmployees = $directoryEmployees->where('company_id', (int) $request->company_id); }
-        $directoryEntries = $this->filteredQuery(new Request($request->only(['status', 'company_id'])), $month, $workforce)->get()->groupBy('employee_id');
-        $employeeDirectory = $directoryEmployees->map(function ($employee) use ($directoryEntries) {
+        $directoryQuery = Access::employees()->where('employment_type', $workforce)->with(['company', 'designation'])->orderBy('name');
+        if ($request->filled('company_id')) { $directoryQuery->where('company_id', (int) $request->company_id); }
+        if ($request->filled('employee_search')) {
+            $search = trim($request->employee_search);
+            $directoryQuery->where(function ($q) use ($search) { $q->where('name', 'like', '%'.$search.'%')->orWhere('iqama_number', 'like', '%'.$search.'%')->orWhereHas('company', function ($company) use ($search) { $company->where('name', 'like', '%'.$search.'%'); })->orWhereHas('designation', function ($designation) use ($search) { $designation->where('name', 'like', '%'.$search.'%'); }); });
+        }
+        $directoryEmployees = $directoryQuery->paginate(25, ['*'], 'directory_page')->withQueryString();
+        $directoryEntries = $this->filteredQuery(new Request($request->only(['status', 'company_id'])), $month, $workforce)->whereIn('employee_id', $directoryEmployees->pluck('id'))->get()->groupBy('employee_id');
+        $employeeDirectory = $directoryEmployees->getCollection()->map(function ($employee) use ($directoryEntries) {
             $entries = $directoryEntries->get($employee->id, collect());
             return ['employee' => $employee, 'entries' => $entries->count(), 'regular' => $entries->sum('regular_units'), 'overtime' => $entries->sum('overtime_units'), 'pending' => $entries->where('status', 'pending')->count()];
         })->values();
-        return view('timesheets.index', compact('timesheets', 'employees', 'companies', 'month', 'workforce', 'routePrefix', 'totals', 'employeeDirectory'));
+        $selectedEmployee = $request->filled('employee_id') ? Access::employees()->where('employment_type', $workforce)->find($request->employee_id) : null;
+        return view('timesheets.index', compact('timesheets', 'companies', 'month', 'workforce', 'routePrefix', 'totals', 'employeeDirectory', 'directoryEmployees', 'selectedEmployee'));
     }
     private function filteredQuery(Request $request, $month, $workforce)
     {
@@ -40,6 +45,7 @@ class TimesheetController extends Controller
             ->where('work_date', 'like', $month.'%');
         if ($request->filled('status')) { $query->where('status', $request->status); }
         if ($request->filled('employee_id')) { $query->where('employee_id', $request->employee_id); }
+        if ($request->filled('employee_search')) { $search = trim($request->employee_search); $query->whereHas('employee', function ($employee) use ($search) { $employee->where('name', 'like', '%'.$search.'%')->orWhere('iqama_number', 'like', '%'.$search.'%'); }); }
         if ($request->filled('company_id')) { $query->whereHas('employee', function ($q) use ($request) { $q->where('company_id', $request->company_id); }); }
         return $query;
     }
@@ -112,14 +118,16 @@ class TimesheetController extends Controller
     private function form($timesheet)
     {
         $workforce = $this->workforce(); $routePrefix = $this->prefix();
-        $employees = Access::employees()->where('employment_type', $workforce)->where(function ($q) use ($timesheet) { $q->where('status', 'active')->orWhere('id', $timesheet->employee_id ?? 0); })->with('company')->orderBy('name')->get();
+        $search = trim((string) request('employee_search'));
+        $employees = Access::employees()->where('employment_type', $workforce)->where(function ($q) use ($timesheet) { $q->where('status', 'active')->orWhere('id', $timesheet->employee_id ?? 0); })->when(request('employee_id') && !$timesheet->exists, function ($q) { $q->where('id', request('employee_id')); })->when($search, function ($q) use ($search) { $q->where(function ($match) use ($search) { $match->where('name', 'like', '%'.$search.'%')->orWhere('iqama_number', 'like', '%'.$search.'%')->orWhereHas('company', function ($company) use ($search) { $company->where('name', 'like', '%'.$search.'%'); }); }); })->with('company')->orderBy('name')->limit(50)->get();
         return view('timesheets.form', compact('timesheet', 'employees', 'workforce', 'routePrefix'));
     }
     public function store(Request $request) { return $this->save($request, new Timesheet); }
     public function bulk()
     {
         $workforce = $this->workforce(); $routePrefix = $this->prefix();
-        $employees = Access::employees()->where('employment_type', $workforce)->where('status', 'active')->with('company')->orderBy('name')->get();
+        $search = trim((string) request('employee_search'));
+        $employees = Access::employees()->where('employment_type', $workforce)->where('status', 'active')->when(request('employee_id'), function ($q) { $q->where('id', request('employee_id')); })->when($search, function ($q) use ($search) { $q->where(function ($match) use ($search) { $match->where('name', 'like', '%'.$search.'%')->orWhere('iqama_number', 'like', '%'.$search.'%')->orWhereHas('company', function ($company) use ($search) { $company->where('name', 'like', '%'.$search.'%'); }); }); })->with('company')->orderBy('name')->limit(50)->get();
         return view('timesheets.bulk', compact('employees', 'workforce', 'routePrefix'));
     }
     public function storeBulk(Request $request)

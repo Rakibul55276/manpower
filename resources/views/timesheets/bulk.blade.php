@@ -4,6 +4,7 @@
 @section('description', 'Fill 10 regular hours per day, skipping Fridays. Review every date before submitting.')
 @section('actions')<a class="btn secondary" href="{{ route($routePrefix.'.index') }}">← Hours register</a>@endsection
 @section('content')
+<div class="card"><form class="filters" method="GET" action="{{ route($routePrefix.'.bulk') }}"><div class="field search"><label for="employee_search">Find employee</label><input id="employee_search" name="employee_search" value="{{ request('employee_search') }}" maxlength="100" placeholder="Name, Iqama or company"></div><button class="btn secondary">Search</button>@if(request('employee_search'))<a class="btn link" href="{{ route($routePrefix.'.bulk') }}">Clear</a>@endif<span class="help">Showing up to 50 matching active employees.</span></form></div>
 <div class="card"><div class="card-body">
 <form method="POST" action="{{ route($routePrefix.'.bulk.store') }}" data-bulk-hours>
 @csrf

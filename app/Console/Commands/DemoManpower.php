@@ -47,7 +47,7 @@ class DemoManpower extends Command
                     'name' => ''.$name, 'photo_path' => $photoPath, 'document_path' => $documentPath, 'passport_number' => 'DEMO'.str_pad($index, 6, '0', STR_PAD_LEFT),
                     'phone' => '+966500'.str_pad($index, 6, '0', STR_PAD_LEFT), 'company_id' => $companies[($index - 1) % 5]->id, 'designation_id' => $designations[($index - 1) % 7]->id,
                     'blood_group' => $bloodGroups[($index - 1) % 8], 'employment_type' => $own ? 'own' : 'rental', 'salary_type' => $own ? 'monthly' : 'hourly', 'hourly_rate_cents' => $rate,
-                    'monthly_salary_cents' => $own ? 350000 + (($index % 8) * 50000) : 0, 'overtime_multiplier_units' => 150,
+                    'monthly_salary_cents' => $own ? 350000 + (($index % 8) * 50000) : 0, 'overtime_rate_cents' => (int) round($rate * 1.5), 'overtime_multiplier_units' => 100,
                     'nationality' => 'Saudi Arabia', 'personal_email' => 'employee'.$index.'@example.test',
                     'professional_summary' => 'Reliable '.$designations[($index - 1) % 7]->name.' experienced in safe site operations, teamwork, and daily reporting.',
                     'education' => 'Technical training and workplace safety certification.', 'skills' => 'Safety awareness, teamwork, communication, daily reporting',
@@ -60,7 +60,7 @@ class DemoManpower extends Command
                 for ($day = $start->copy(); $day->lte($end); $day->addDay()) {
                     if (in_array($day->dayOfWeek, [5, 6])) { continue; }
                     Timesheet::firstOrCreate(['employee_id' => $employee->id, 'work_date' => $day->format('Y-m-d')], [
-                        'regular_units' => 800, 'overtime_units' => ($index + $day->day) % 4 === 0 ? 200 : 0, 'hourly_rate_cents' => $rate, 'overtime_multiplier_units' => 150,
+                        'regular_units' => 800, 'overtime_units' => ($index + $day->day) % 4 === 0 ? 200 : 0, 'hourly_rate_cents' => $rate, 'overtime_rate_cents' => (int) round($rate * 1.5), 'overtime_multiplier_units' => 100,
                         'status' => 'approved', 'notes' => 'Daily shift completed.', 'created_by' => $creatorId, 'reviewed_by' => $admin->id, 'reviewed_at' => now(),
                     ]);
                 }
@@ -82,7 +82,7 @@ class DemoManpower extends Command
             foreach ($demoEmployees as $employee) {
                 if ($employee->payrolls()->where('month', $date->format('Y-m'))->exists()) { continue; }
                 Timesheet::firstOrCreate(['employee_id' => $employee->id, 'work_date' => $date->format('Y-m-d')], [
-                    'regular_units' => 800, 'overtime_units' => $employee->id % 4 === 0 ? 100 : 0, 'hourly_rate_cents' => $employee->hourly_rate_cents, 'overtime_multiplier_units' => $employee->overtime_multiplier_units,
+                    'regular_units' => 800, 'overtime_units' => $employee->id % 4 === 0 ? 100 : 0, 'hourly_rate_cents' => $employee->hourly_rate_cents, 'overtime_rate_cents' => $employee->overtime_rate_cents, 'overtime_multiplier_units' => 100,
                     'status' => 'pending', 'notes' => 'Sample current-month shift awaiting review.', 'created_by' => $manager->canAccessCompany($employee->company_id) ? $manager->id : $admin->id,
                 ]);
             }

@@ -85,7 +85,8 @@ class AuditReportController extends Controller
         $records = $query->latest($this->orderColumn($filters['report']))->paginate(30)->withQueryString();
         $rows = $records->map(fn ($record) => $this->row($record, $filters['report']));
         $users = User::orderBy('name')->get(); $actions = ActivityLog::distinct()->orderBy('action')->pluck('action');
-        $companies = Company::orderBy('name')->get(); $employees = Employee::orderBy('name')->get();
+        $companies = Company::orderBy('name')->get();
+        $employees = !empty($filters['employee_id']) ? Employee::where('id', $filters['employee_id'])->get() : collect();
         $headings = $this->headings($filters['report']); $reportTitle = $this->title($filters['report']);
         return view('audit.index', compact('filters', 'records', 'rows', 'users', 'actions', 'companies', 'employees', 'headings', 'reportTitle', 'total'));
     }

@@ -53,7 +53,7 @@ class ManpowerTest extends TestCase
     }
     private function payload($overrides = [])
     {
-        return array_merge(['name' => 'New Worker', 'photo' => UploadedFile::fake()->image('photo.jpg'), 'iqama_number' => '2123456789', 'passport_number' => 'AB123456', 'phone' => '+966501234567', 'nationality' => 'Saudi Arabia', 'personal_email' => 'new.worker@test.local', 'professional_summary' => 'Experienced and reliable worker.', 'education' => 'Technical diploma.', 'skills' => 'Safety, teamwork, communication', 'company_id' => $this->company->id, 'designation_id' => $this->designation->id, 'blood_group' => 'A+', 'previous_experience' => [['company_name' => 'Previous Employer', 'position' => 'Worker', 'duration' => '2 years', 'responsibilities' => 'Site operations and reporting.']], 'hourly_rate' => '20.00', 'regular_hours' => '8.00', 'overtime_multiplier' => '1.50', 'joined_on' => now()->subMonth()->format('Y-m-d'), 'status' => 'active'], $overrides);
+        return array_merge(['name' => 'New Worker', 'photo' => UploadedFile::fake()->image('photo.jpg'), 'iqama_number' => '2123456789', 'passport_number' => 'AB123456', 'phone' => '+966501234567', 'nationality' => 'Saudi Arabia', 'personal_email' => 'new.worker@test.local', 'professional_summary' => 'Experienced and reliable worker.', 'education' => 'Technical diploma.', 'skills' => 'Safety, teamwork, communication', 'company_id' => $this->company->id, 'designation_id' => $this->designation->id, 'blood_group' => 'A+', 'previous_experience' => [['company_name' => 'Previous Employer', 'position' => 'Worker', 'duration' => '2 years', 'responsibilities' => 'Site operations and reporting.']], 'hourly_rate' => '20.00', 'overtime_rate' => '30.00', 'regular_hours' => '8.00', 'joined_on' => now()->subMonth()->format('Y-m-d'), 'status' => 'active'], $overrides);
     }
     private function generate(Employee $employee, $prefix = 'payrolls', $overrides = [])
     {
@@ -345,6 +345,25 @@ class ManpowerTest extends TestCase
         $entry->update(['status' => 'approved']);
         $this->generate($employee, 'payrolls', ['deduction' => '99999.00'])->assertSessionHasErrors('deduction');
         $this->assertDatabaseCount('payrolls', 0);
+    }
+    public function test_manager_admin_and_super_admin_can_generate_after_all_timesheets_are_reviewed()
+    {
+        foreach ([$this->manager, $this->approver, $this->admin] as $user) {
+            $employee = $this->employee();
+            $this->entry($employee, ['status' => 'approved']);
+            $this->entry($employee, ['work_date' => now()->subDay()->format('Y-m-d'), 'status' => 'rejected']);
+            $this->actingAs($user)->post(route('payrolls.store'), [
+                'employee_id' => $employee->id, 'month' => now()->format('Y-m'), 'allowance' => '0', 'deduction' => '0',
+            ])->assertSessionHasNoErrors();
+        }
+        $this->assertDatabaseCount('payrolls', 3);
+
+        $employee = $this->employee();
+        $this->entry($employee, ['status' => 'approved']);
+        $this->entry($employee, ['work_date' => now()->subDay()->format('Y-m-d'), 'status' => 'pending']);
+        $this->actingAs($this->admin)->post(route('payrolls.store'), [
+            'employee_id' => $employee->id, 'month' => now()->format('Y-m'), 'allowance' => '0', 'deduction' => '0',
+        ])->assertSessionHasErrors('month');
     }
     public function test_monthly_salary_is_separate_and_does_not_use_regular_hours()
     {

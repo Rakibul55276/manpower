@@ -4,6 +4,7 @@
 @section('description', 'One entry per employee per day. New entries remain pending for Admin approval.')
 @section('actions')<a class="btn secondary" href="{{ route($routePrefix.'.index') }}">← Hours register</a>@endsection
 @section('content')
+@if(!$timesheet->exists)<div class="card"><form class="filters" method="GET" action="{{ route($routePrefix.'.create') }}"><div class="field search"><label for="employee_search">Find employee</label><input id="employee_search" name="employee_search" value="{{ request('employee_search') }}" maxlength="100" placeholder="Name, Iqama or company"></div><button class="btn secondary">Search</button>@if(request('employee_search'))<a class="btn link" href="{{ route($routePrefix.'.create') }}">Clear</a>@endif<span class="help">Showing up to 50 matching active employees.</span></form></div>@endif
 <div class="columns"><div class="card"><div class="card-head"><h2>Daily {{ $workforce === 'own' ? 'attendance' : 'hours' }}</h2></div><div class="card-body">
 <form method="POST" action="{{ $timesheet->exists ? route($routePrefix.'.update', $timesheet) : route($routePrefix.'.store') }}">@csrf @if($timesheet->exists) @method('PUT') @endif
 <div class="form-grid">
