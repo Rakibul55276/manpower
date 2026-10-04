@@ -41,6 +41,40 @@ class TimesheetController extends Controller
         return view('timesheets.form', compact('timesheet', 'employees', 'workforce', 'routePrefix'));
     }
     public function store(Request $request) { return $this->save($request, new Timesheet); }
+    public function bulk()
+    {
+        $workforce = $this->workforce(); $routePrefix = $this->prefix();
+        $employees = Access::employees()->where('employment_type', $workforce)->where('status', 'active')->with('company')->orderBy('name')->get();
+        return view('timesheets.bulk', compact('employees', 'workforce', 'routePrefix'));
+    }
+    public function storeBulk(Request $request)
+    {
+        $data = $request->validate([
+            'employee_id' => 'required|integer|exists:employees,id',
+            'total_hours' => ['nullable', 'numeric', 'min:0.01', 'max:2880', 'regex:/^\d+(\.\d{1,2})?$/'],
+            'entries' => 'required|array|min:1|max:120',
+            'entries.*.work_date' => 'required|date_format:Y-m-d|before_or_equal:today|distinct',
+            'entries.*.regular_hours' => ['required', 'numeric', 'min:0', 'max:24', 'regex:/^\d+(\.\d{1,2})?$/'],
+            'entries.*.overtime_hours' => ['required', 'numeric', 'min:0', 'max:24', 'regex:/^\d+(\.\d{1,2})?$/'],
+            'notes' => 'nullable|string|max:1000',
+        ]);
+        $total = 0;
+        foreach ($data['entries'] as $entry) {
+            $hours = Pay::units($entry['regular_hours']) + Pay::units($entry['overtime_hours']);
+            if ($hours <= 0 || $hours > 2400) { throw ValidationException::withMessages(['entries' => 'Each date must have more than zero and no more than 24 total hours.']); }
+            $total += $hours;
+        }
+        if (isset($data['total_hours']) && $data['total_hours'] !== '' && Pay::units($data['total_hours']) !== $total) {
+            throw ValidationException::withMessages(['total_hours' => 'The date rows must add up to your total-hours target. Adjust the rows or clear the target.']);
+        }
+        DB::transaction(function () use ($data) {
+            foreach ($data['entries'] as $entry) {
+                $this->save(new Request(array_merge($entry, ['employee_id' => $data['employee_id'], 'notes' => $data['notes'] ?? null])), new Timesheet);
+            }
+        });
+        return redirect()->route($this->prefix().'.index', ['month' => substr($data['entries'][array_key_first($data['entries'])]['work_date'], 0, 7), 'employee_id' => $data['employee_id']])
+            ->with('success', count($data['entries']).' dates saved and submitted for Super Admin approval.');
+    }
     public function update(Request $request, Timesheet $timesheet) { $this->check($timesheet); return $this->save($request, $timesheet); }
     private function unlocked(Employee $employee, $date)
     {

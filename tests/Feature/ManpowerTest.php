@@ -68,6 +68,49 @@ class ManpowerTest extends TestCase
         $this->get(route('dashboard'))->assertRedirect(route('login'));
         $this->assertGuest();
     }
+    public function test_bulk_hours_save_exact_total_and_protect_company_access_and_existing_dates()
+    {
+        $employee = $this->employee();
+        $first = now()->subDays(3)->format('Y-m-d');
+        $second = now()->subDays(2)->format('Y-m-d');
+        $payload = ['employee_id' => $employee->id, 'total_hours' => '15.25', 'entries' => [
+            ['work_date' => $first, 'regular_hours' => '10', 'overtime_hours' => '0'],
+            ['work_date' => $second, 'regular_hours' => '5', 'overtime_hours' => '0.25'],
+        ]];
+        $this->actingAs($this->manager)->get(route('timesheets.bulk'))->assertOk()->assertSee('Total-hours target');
+        $this->post(route('timesheets.bulk.store'), array_merge($payload, ['total_hours' => 20]))->assertSessionHasErrors('total_hours');
+        $this->assertEquals(0, Timesheet::count());
+        $this->post(route('timesheets.bulk.store'), $payload)->assertSessionHasNoErrors()->assertRedirect();
+        $this->assertEquals(2, Timesheet::count());
+        $this->assertDatabaseHas('timesheets', ['employee_id' => $employee->id, 'work_date' => $second, 'regular_units' => 500, 'overtime_units' => 25, 'status' => 'pending', 'hourly_rate_cents' => $employee->hourly_rate_cents]);
+        // A new date preceding a duplicate must roll back with the entire batch.
+        $payload['entries'][0]['work_date'] = now()->subDays(4)->format('Y-m-d');
+        $this->post(route('timesheets.bulk.store'), $payload)->assertSessionHasErrors('work_date');
+        $this->assertEquals(2, Timesheet::count());
+        $payload['employee_id'] = $this->employee(['company_id' => $this->other->id])->id;
+        $this->post(route('timesheets.bulk.store'), $payload)->assertForbidden();
+        $payload['employee_id'] = $this->employee(['employment_type' => 'own', 'salary_type' => 'monthly'])->id;
+        $this->post(route('timesheets.bulk.store'), $payload)->assertForbidden();
+        $this->post(route('attendance.bulk.store'), $payload)->assertSessionHasNoErrors();
+        $this->assertEquals(4, Timesheet::count());
+    }
+    public function test_bulk_hours_reject_duplicate_dates_future_dates_and_locked_month_atomically()
+    {
+        $employee = $this->employee();
+        $date = now()->format('Y-m-d');
+        $row = ['work_date' => $date, 'regular_hours' => 10, 'overtime_hours' => 0];
+        $payload = ['employee_id' => $employee->id, 'entries' => [$row, $row]];
+        $this->actingAs($this->manager)->post(route('timesheets.bulk.store'), $payload)->assertSessionHasErrors('entries.0.work_date');
+        $payload['entries'] = [array_merge($row, ['work_date' => now()->addDay()->format('Y-m-d')])];
+        $this->post(route('timesheets.bulk.store'), $payload)->assertSessionHasErrors('entries.0.work_date');
+        $payload['entries'] = [array_merge($row, ['overtime_hours' => 20])];
+        $this->post(route('timesheets.bulk.store'), $payload)->assertSessionHasErrors('entries');
+        $this->entry($employee);
+        $this->generate($employee)->assertSessionHasNoErrors();
+        $payload['entries'] = [array_merge($row, ['work_date' => now()->subMonth()->startOfMonth()->format('Y-m-d')]), $row];
+        $this->actingAs($this->manager)->post(route('timesheets.bulk.store'), $payload)->assertSessionHasErrors('work_date');
+        $this->assertEquals(1, Timesheet::count());
+    }
     public function test_all_primary_screens_render_for_both_roles()
     {
         foreach ([$this->admin, $this->manager] as $user) {

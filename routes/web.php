@@ -43,6 +43,8 @@ Route::middleware(['auth', 'active', 'auth.session'])->group(function () {
     }
     foreach (['rental' => 'timesheets', 'own' => 'attendance'] as $workforce => $prefix) {
         $controller = \App\Http\Controllers\TimesheetController::class;
+        Route::get('/'.$prefix.'/bulk', [$controller, 'bulk'])->defaults('workforce', $workforce)->name($prefix.'.bulk');
+        Route::post('/'.$prefix.'/bulk', [$controller, 'storeBulk'])->defaults('workforce', $workforce)->name($prefix.'.bulk.store');
         Route::get('/'.$prefix, [$controller, 'index'])->defaults('workforce', $workforce)->name($prefix.'.index');
         Route::get('/'.$prefix.'/create', [$controller, 'create'])->defaults('workforce', $workforce)->name($prefix.'.create');
         Route::post('/'.$prefix, [$controller, 'store'])->defaults('workforce', $workforce)->name($prefix.'.store');

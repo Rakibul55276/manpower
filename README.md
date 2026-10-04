@@ -66,7 +66,7 @@ Archiving sets an employee inactive and preserves history. Reactivate through Ed
 ## Rental hours and payroll
 
 1. Add a rental employee and set their regular hourly rate and overtime multiplier.
-2. Submit daily hours under Rental timesheets.
+2. Submit daily hours under Rental timesheets. Use **Date range** to select an employee and start/end dates, then generate 10 regular hours per day excluding Fridays. Optionally enter a total-hours target; dates fill in order with a shorter final day. Add/remove dates and edit regular/overtime hours in the preview before submitting. A target must match the edited rows, or you may clear it. The same feature is available in Own employee attendance, with monthly salaries remaining separate. Each submission supports up to 120 dates and saves all rows together; duplicate dates, existing entries, dates before joining, future dates, and payroll-locked months reject the entire batch.
 3. The Super Admin approves or rejects the entry. Rejected entries can be corrected and resubmitted; approved entries can be reopened by the Super Admin before payroll generation.
 4. Generate a draft salary for the employee and month after all pending entries are reviewed.
 5. Adjust allowances or deductions, download a payslip, and record payment.
