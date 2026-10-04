@@ -23,7 +23,7 @@ php artisan manpower:install
 php artisan manpower:demo
 ```
 
-The installer generates random initial passwords on a fresh database and does not overwrite existing accounts. Demo seeding is idempotent and adds exactly 100 fictional employees: 80 rental and 20 own employees. It includes five demo companies, sample timesheets/attendance, previous-month salary history, placeholder portraits, and ten supporting PDFs. All demo employees and companies are labeled `[Demo]`. Demo paid statuses represent fictional records, not actual payments. The initial Manager receives three demo companies plus the original company assignment.
+The installer generates random initial passwords on a fresh database and does not overwrite existing accounts. Demo seeding is idempotent and adds exactly 100 fictional employees: 80 rental and 20 own employees. It includes five demo companies, sample timesheets/attendance, previous-month salary history, placeholder portraits, and ten supporting PDFs. Employee and company names appear without demo prefixes. Sample salary records and supporting certificates retain their fictional-content notes. Demo paid statuses represent fictional records, not actual payments. The initial Manager receives three demo companies plus the original company assignment.
 
 ## Import the SQL demo
 

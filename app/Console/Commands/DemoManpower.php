@@ -13,12 +13,12 @@ use Illuminate\Support\Facades\Storage;
 class DemoManpower extends Command
 {
     protected $signature = 'manpower:demo';
-    protected $description = 'Add 100 clearly labeled demo employees with hours and salary history (idempotent)';
+    protected $description = 'Add 100 sample employees with hours and salary history (idempotent)';
     public function handle()
     {
         $admin = User::where('role', 'super_admin')->firstOrFail();
         $manager = User::where('email', 'manager@manpower.local')->firstOrFail();
-        $companies = collect(['Gulf Construction', 'Riyadh Facilities', 'Eastern Engineering', 'Jeddah Logistics', 'Desert Industrial'])->map(function ($name) { return Company::firstOrCreate(['name' => '[Demo] '.$name]); });
+        $companies = collect(['Gulf Construction', 'Riyadh Facilities', 'Eastern Engineering', 'Jeddah Logistics', 'Desert Industrial'])->map(function ($name) { return Company::firstOrCreate(['name' => ''.$name]); });
         $designations = collect(['General Worker', 'Electrician', 'Plumber', 'Welder', 'Driver', 'Supervisor', 'Accountant'])->map(function ($name) { return Designation::firstOrCreate(['name' => $name]); });
         $manager->companies()->syncWithoutDetaching($companies->take(3)->pluck('id')->all());
         $firstNames = ['Ahmed', 'Mohammed', 'Abdul', 'Omar', 'Hassan', 'Imran', 'Rakib', 'Karim', 'Yusuf', 'Ali', 'Bilal', 'Naeem', 'Rafiq', 'Sajid', 'Faisal', 'Salman', 'Ibrahim', 'Khalid', 'Farhan', 'Tariq'];
@@ -43,11 +43,11 @@ class DemoManpower extends Command
                     }
                 }
                 $employee = Employee::firstOrCreate(['iqama_number' => (string) (2900000000 + $index)], [
-                    'name' => '[Demo] '.$name, 'photo_path' => $photoPath, 'document_path' => $documentPath, 'passport_number' => 'DEMO'.str_pad($index, 6, '0', STR_PAD_LEFT),
+                    'name' => ''.$name, 'photo_path' => $photoPath, 'document_path' => $documentPath, 'passport_number' => 'DEMO'.str_pad($index, 6, '0', STR_PAD_LEFT),
                     'phone' => '+966500'.str_pad($index, 6, '0', STR_PAD_LEFT), 'company_id' => $companies[($index - 1) % 5]->id, 'designation_id' => $designations[($index - 1) % 7]->id,
                     'blood_group' => $bloodGroups[($index - 1) % 8], 'employment_type' => $own ? 'own' : 'rental', 'salary_type' => $own ? 'monthly' : 'hourly', 'hourly_rate_cents' => $rate,
                     'monthly_salary_cents' => $own ? 350000 + (($index % 8) * 50000) : 0, 'overtime_multiplier_units' => 150,
-                    'previous_experience' => ['[Demo] Worked on commercial construction and facility maintenance projects for '.(2 + ($index % 8)).' years.', '[Demo] Previous role: '.$designations[($index - 1) % 7]->name.'. Tasks included safety checks, teamwork, and daily reporting.'],
+                    'previous_experience' => ['Worked on commercial construction and facility maintenance projects for '.(2 + ($index % 8)).' years.', 'Previous role: '.$designations[($index - 1) % 7]->name.'. Tasks included safety checks, teamwork, and daily reporting.'],
                     'joined_on' => now()->subYear()->startOfYear()->addDays($index)->format('Y-m-d'), 'status' => $index > 95 ? 'inactive' : 'active', 'created_by' => $admin->id,
                 ]);
                 if ($employee->wasRecentlyCreated) { $created++; }
@@ -57,7 +57,7 @@ class DemoManpower extends Command
                     if (in_array($day->dayOfWeek, [5, 6])) { continue; }
                     Timesheet::firstOrCreate(['employee_id' => $employee->id, 'work_date' => $day->format('Y-m-d')], [
                         'regular_units' => 800, 'overtime_units' => ($index + $day->day) % 4 === 0 ? 200 : 0, 'hourly_rate_cents' => $rate, 'overtime_multiplier_units' => 150,
-                        'status' => 'approved', 'notes' => '[Demo] Daily shift completed.', 'created_by' => $creatorId, 'reviewed_by' => $admin->id, 'reviewed_at' => now(),
+                        'status' => 'approved', 'notes' => 'Daily shift completed.', 'created_by' => $creatorId, 'reviewed_by' => $admin->id, 'reviewed_at' => now(),
                     ]);
                 }
                 $approved = $employee->timesheets()->where('work_date', 'like', $month.'%')->where('status', 'approved')->get();
@@ -69,7 +69,7 @@ class DemoManpower extends Command
                     'employee_name' => $employee->name, 'company_name' => $employee->company->name, 'designation_name' => $employee->designation->name, 'iqama_number' => $employee->iqama_number,
                     'regular_units' => $approved->sum('regular_units'), 'overtime_units' => $approved->sum('overtime_units'), 'regular_pay_cents' => $base, 'overtime_pay_cents' => $overtime,
                     'allowance_cents' => $allowance, 'deduction_cents' => $deduction, 'net_pay_cents' => $base + $overtime + $allowance - $deduction,
-                    'status' => $paid ? 'paid' : 'draft', 'paid_at' => $paid ? now() : null, 'paid_by' => $paid ? $admin->id : null, 'created_by' => $admin->id, 'notes' => '[Demo] Fictional salary record. No real payment has been made.']);
+                    'status' => $paid ? 'paid' : 'draft', 'paid_at' => $paid ? now() : null, 'paid_by' => $paid ? $admin->id : null, 'created_by' => $admin->id, 'notes' => 'Fictional salary record. No real payment has been made.']);
                 Timesheet::whereIn('id', $approved->pluck('id'))->update(['payroll_id' => $payroll->id]);
             }
             // Add current-month examples once, leaving some pending for the review workflow.
@@ -79,7 +79,7 @@ class DemoManpower extends Command
                 if ($employee->payrolls()->where('month', $date->format('Y-m'))->exists()) { continue; }
                 Timesheet::firstOrCreate(['employee_id' => $employee->id, 'work_date' => $date->format('Y-m-d')], [
                     'regular_units' => 800, 'overtime_units' => $employee->id % 4 === 0 ? 100 : 0, 'hourly_rate_cents' => $employee->hourly_rate_cents, 'overtime_multiplier_units' => $employee->overtime_multiplier_units,
-                    'status' => 'pending', 'notes' => '[Demo] Sample current-month shift awaiting review.', 'created_by' => $manager->canAccessCompany($employee->company_id) ? $manager->id : $admin->id,
+                    'status' => 'pending', 'notes' => 'Sample current-month shift awaiting review.', 'created_by' => $manager->canAccessCompany($employee->company_id) ? $manager->id : $admin->id,
                 ]);
             }
         });
