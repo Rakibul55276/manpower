@@ -36,10 +36,11 @@
 </div>
 <div class="card" id="report-results">
     <div class="card-head"><h2>{{ $reportTitle }}</h2><span class="badge">{{ number_format($total) }} records</span></div>
+    <div class="stats" style="padding:18px 23px;grid-template-columns:repeat({{ min(count($summary), 4) }},minmax(0,1fr))">@foreach($summary as $label => $value)<div class="stat"><div class="label">{{ $label }}</div><div class="value" style="font-size:24px">{{ $value }}</div></div>@endforeach</div>
     <div class="table-wrap"><table><thead><tr>@foreach($headings as $heading)<th>{{ $heading }}</th>@endforeach</tr></thead><tbody>
     @forelse($rows as $row)<tr>@foreach($row as $value)<td class="wrap">{{ $value === null || $value === '' ? '—' : $value }}</td>@endforeach</tr>
     @empty<tr><td colspan="{{ count($headings) }}"><div class="empty"><strong>No records found</strong><p>Adjust the report type, period, or filters.</p></div></td></tr>@endforelse
-    </tbody></table></div>
+    </tbody>@if($filters['report'] === 'salaries' && $total)<tfoot><tr><th colspan="4">TOTAL</th><th>{{ $summary['Regular pay · SAR'] }}</th><th>{{ $summary['Overtime pay · SAR'] }}</th><th>{{ $summary['Allowances · SAR'] }}</th><th>{{ $summary['Deductions · SAR'] }}</th><th>{{ $summary['Net pay · SAR'] }}</th><th>—</th></tr></tfoot>@elseif($filters['report'] === 'timesheets' && $total)<tfoot><tr><th colspan="4">TOTAL</th><th>{{ $summary['Regular hours'] }}</th><th>{{ $summary['Overtime hours'] }}</th><th colspan="2">{{ $summary['Records'] }} records</th></tr></tfoot>@endif</table></div>
     @include('partials.pagination', ['items' => $records])
 </div>
 @endsection

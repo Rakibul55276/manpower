@@ -72,10 +72,12 @@ Route::middleware(['auth', 'active', 'auth.session'])->group(function () {
         Route::post('/'.$prefix.'/{payroll}/approve', [$controller, 'approve'])->middleware('approver')->defaults('workforce', $workforce)->name($prefix.'.approve');
         Route::delete('/'.$prefix.'/{payroll}', [$controller, 'destroy'])->middleware('super_admin')->defaults('workforce', $workforce)->name($prefix.'.destroy');
     }
-    Route::middleware('super_admin')->group(function () {
-        Route::resource('users', \App\Http\Controllers\UserController::class)->except(['show', 'destroy']);
+    Route::middleware('approver')->group(function () {
         Route::get('/audit-report', [\App\Http\Controllers\AuditReportController::class, 'index'])->name('audit.index');
         Route::get('/audit-report/export.csv', [\App\Http\Controllers\AuditReportController::class, 'csv'])->name('audit.csv');
         Route::get('/audit-report/export.pdf', [\App\Http\Controllers\AuditReportController::class, 'pdf'])->name('audit.pdf');
+    });
+    Route::middleware('super_admin')->group(function () {
+        Route::resource('users', \App\Http\Controllers\UserController::class)->except(['show', 'destroy']);
     });
 });

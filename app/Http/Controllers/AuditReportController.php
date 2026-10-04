@@ -2,6 +2,7 @@
 namespace App\Http\Controllers;
 use App\Models\{ActivityLog, Company, Employee, Payroll, Timesheet, User};
 use App\Services\Documents;
+use App\Services\Access;
 use Illuminate\Http\Request;
 
 class AuditReportController extends Controller
@@ -22,13 +23,13 @@ class AuditReportController extends Controller
     private function report(Request $request) {
         $filters = $this->filters($request);
         if ($filters['report'] === 'employees') {
-            $query = Employee::with(['company', 'designation'])->whereBetween('joined_on', [$filters['from'], $filters['to']]);
+            $query = Access::employees()->with(['company', 'designation'])->whereBetween('joined_on', [$filters['from'], $filters['to']]);
             $this->employeeFilters($query, $filters);
             if (!empty($filters['search'])) $query->where(function ($q) use ($filters) { $q->where('name', 'like', '%'.$filters['search'].'%')->orWhere('iqama_number', 'like', '%'.$filters['search'].'%')->orWhere('passport_number', 'like', '%'.$filters['search'].'%'); });
             return [$filters, $query];
         }
         if ($filters['report'] === 'timesheets') {
-            $query = Timesheet::with(['employee.company', 'employee.designation', 'creator', 'reviewer'])->whereBetween('work_date', [$filters['from'], $filters['to']]);
+            $query = Timesheet::with(['employee.company', 'employee.designation', 'creator', 'reviewer'])->whereIn('employee_id', Access::employees()->select('id'))->whereBetween('work_date', [$filters['from'], $filters['to']]);
             $this->relatedEmployeeFilters($query, $filters);
             if (!empty($filters['status'])) $query->where('status', $filters['status']);
             if (!empty($filters['search'])) $query->whereHas('employee', function ($q) use ($filters) { $q->where('name', 'like', '%'.$filters['search'].'%')->orWhere('iqama_number', 'like', '%'.$filters['search'].'%'); });
@@ -36,6 +37,7 @@ class AuditReportController extends Controller
         }
         if ($filters['report'] === 'salaries') {
             $query = Payroll::with(['employee', 'approver'])->whereBetween('month', [substr($filters['from'], 0, 7), substr($filters['to'], 0, 7)]);
+            if (!auth()->user()->isAdmin()) $query->whereIn('company_id', auth()->user()->companies()->select('companies.id'));
             if (!empty($filters['employment_type'])) $query->where('employment_type', $filters['employment_type']);
             if (!empty($filters['company_id'])) $query->where('company_id', $filters['company_id']);
             if (!empty($filters['employee_id'])) $query->where('employee_id', $filters['employee_id']);
@@ -44,6 +46,7 @@ class AuditReportController extends Controller
             return [$filters, $query];
         }
         $query = ActivityLog::with('user')->whereBetween('created_at', [$filters['from'].' 00:00:00', $filters['to'].' 23:59:59']);
+        if (!auth()->user()->isAdmin()) $query->where('user_id', auth()->id());
         if (!empty($filters['user_id'])) $query->where('user_id', $filters['user_id']);
         if (!empty($filters['action'])) $query->where('action', $filters['action']);
         if (!empty($filters['search'])) $query->where('subject', 'like', '%'.$filters['search'].'%');
@@ -80,27 +83,41 @@ class AuditReportController extends Controller
     }
     private function title($type) { return ['activity' => 'Activity Trail', 'employees' => 'Employee Details', 'timesheets' => 'Timesheet & Attendance Details', 'salaries' => 'Salary Details'][$type]; }
     private function orderColumn($type) { return $type === 'timesheets' ? 'work_date' : ($type === 'salaries' ? 'month' : 'created_at'); }
+    private function summary($query, $type) {
+        $count = (clone $query)->count();
+        if ($type === 'timesheets') {
+            $totals = (clone $query)->selectRaw('COALESCE(SUM(regular_units),0) as regular, COALESCE(SUM(overtime_units),0) as overtime')->first();
+            return ['Records' => number_format($count), 'Regular hours' => number_format($totals->regular / 100, 2), 'Overtime hours' => number_format($totals->overtime / 100, 2)];
+        }
+        if ($type === 'salaries') {
+            $totals = (clone $query)->selectRaw('COALESCE(SUM(regular_pay_cents),0) as regular, COALESCE(SUM(overtime_pay_cents),0) as overtime, COALESCE(SUM(allowance_cents + meal_allowance_cents + transportation_allowance_cents + housing_allowance_cents + medical_allowance_cents),0) as allowances, COALESCE(SUM(deduction_cents + retirement_insurance_cents + tax_cents),0) as deductions, COALESCE(SUM(net_pay_cents),0) as net')->first();
+            return ['Salary records' => number_format($count), 'Regular pay · SAR' => number_format($totals->regular / 100, 2), 'Overtime pay · SAR' => number_format($totals->overtime / 100, 2), 'Allowances · SAR' => number_format($totals->allowances / 100, 2), 'Deductions · SAR' => number_format($totals->deductions / 100, 2), 'Net pay · SAR' => number_format($totals->net / 100, 2)];
+        }
+        return [$type === 'employees' ? 'Total employees' : 'Total activities' => number_format($count)];
+    }
     public function index(Request $request) {
         [$filters, $query] = $this->report($request); $total = (clone $query)->count();
+        $summary = $this->summary($query, $filters['report']);
         $records = $query->latest($this->orderColumn($filters['report']))->paginate(30)->withQueryString();
         $rows = $records->map(fn ($record) => $this->row($record, $filters['report']));
-        $users = User::orderBy('name')->get(); $actions = ActivityLog::distinct()->orderBy('action')->pluck('action');
-        $companies = Company::orderBy('name')->get();
-        $employees = !empty($filters['employee_id']) ? Employee::where('id', $filters['employee_id'])->get() : collect();
+        $users = auth()->user()->isAdmin() ? User::orderBy('name')->get() : User::where('id', auth()->id())->get(); $actions = ActivityLog::distinct()->orderBy('action')->pluck('action');
+        $companies = Access::companies()->orderBy('name')->get();
+        $employees = !empty($filters['employee_id']) ? Access::employees()->where('id', $filters['employee_id'])->get() : collect();
         $headings = $this->headings($filters['report']); $reportTitle = $this->title($filters['report']);
-        return view('audit.index', compact('filters', 'records', 'rows', 'users', 'actions', 'companies', 'employees', 'headings', 'reportTitle', 'total'));
+        return view('audit.index', compact('filters', 'records', 'rows', 'users', 'actions', 'companies', 'employees', 'headings', 'reportTitle', 'total', 'summary'));
     }
     public function csv(Request $request) {
-        [$filters, $query] = $this->report($request); $records = $query->latest($this->orderColumn($filters['report']))->get(); $headings = $this->headings($filters['report']);
-        return response()->streamDownload(function () use ($records, $headings, $filters) {
+        [$filters, $query] = $this->report($request); $summary = $this->summary($query, $filters['report']); $records = $query->latest($this->orderColumn($filters['report']))->get(); $headings = $this->headings($filters['report']);
+        return response()->streamDownload(function () use ($records, $headings, $filters, $summary) {
             $file = fopen('php://output', 'w'); fputcsv($file, $headings);
             foreach ($records as $record) fputcsv($file, array_map(function ($value) { return preg_match('/^[=+\-@\t\r\n]/', (string) $value) ? "'".$value : $value; }, $this->row($record, $filters['report'])));
+            fputcsv($file, []); fputcsv($file, ['REPORT TOTALS']); foreach ($summary as $label => $value) fputcsv($file, [$label, $value]);
             fclose($file);
         }, 'manpower-'.$filters['report'].'-'.$filters['from'].'-to-'.$filters['to'].'.csv', ['Content-Type' => 'text/csv; charset=UTF-8']);
     }
     public function pdf(Request $request) {
-        [$filters, $query] = $this->report($request); $records = $query->latest($this->orderColumn($filters['report']))->get();
+        [$filters, $query] = $this->report($request); $summary = $this->summary($query, $filters['report']); $records = $query->latest($this->orderColumn($filters['report']))->get();
         $rows = $records->map(fn ($record) => $this->row($record, $filters['report'])); $headings = $this->headings($filters['report']); $reportTitle = $this->title($filters['report']);
-        return Documents::download(Documents::render('pdf.audit', compact('rows', 'headings', 'reportTitle', 'filters')), 'manpower-'.$filters['report'].'-'.$filters['from'].'-to-'.$filters['to'].'.pdf');
+        return Documents::download(Documents::render('pdf.audit', compact('rows', 'headings', 'reportTitle', 'filters', 'summary')), 'manpower-'.$filters['report'].'-'.$filters['from'].'-to-'.$filters['to'].'.pdf');
     }
 }

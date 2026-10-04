@@ -21,7 +21,12 @@
 <div class="nav-section" id="nav-section-organization" data-nav-section="organization">
 <a class="nav-link {{ request()->routeIs('companies.*') ? 'active' : '' }}" href="{{ route('companies.index') }}"><span class="nav-icon">▦</span> Companies</a>
 <a class="nav-link {{ request()->routeIs('designations.*') ? 'active' : '' }}" href="{{ route('designations.index') }}"><span class="nav-icon">◇</span> Designations</a>
-@if(auth()->user()->isSuperAdmin())<a class="nav-link {{ request()->routeIs('users.*') ? 'active' : '' }}" href="{{ route('users.index') }}"><span class="nav-icon">⚙</span> Users & company access</a><a class="nav-link {{ request()->routeIs('audit.*') ? 'active' : '' }}" href="{{ route('audit.index') }}"><span class="nav-icon">≡</span> Audit report</a>@endif
+@if(auth()->user()->isSuperAdmin())
+<a class="nav-link {{ request()->routeIs('users.*') ? 'active' : '' }}" href="{{ route('users.index') }}"><span class="nav-icon">⚙</span> Users & company access</a>
+@endif
+@if(auth()->user()->canApprove())
+<a class="nav-link {{ request()->routeIs('audit.*') ? 'active' : '' }}" href="{{ route('audit.index') }}"><span class="nav-icon">≡</span> Audit reports</a>
+@endif
 </div>
 </nav><div class="sidebar-note">A clear view of your people,<br>their hours, and their pay.<br><br>Currency: SAR · Riyadh time</div></aside>
 <div class="app-shell"><header class="topbar"><button class="menu-toggle" type="button" data-menu-toggle aria-controls="sidebar" aria-expanded="true" aria-label="Collapse navigation" title="Collapse navigation"><span aria-hidden="true">☰</span></button><div class="topbar-context"><strong>Your workforce, connected.</strong>{{ now()->format('l, d F Y') }}</div><div class="user-block"><div class="avatar">{{ strtoupper(substr(auth()->user()->name, 0, 1)) }}</div><a href="{{ route('profile') }}">{{ auth()->user()->name }}<small>{{ auth()->user()->role === 'super_admin' ? 'Super Admin' : (auth()->user()->role === 'admin' ? 'Admin Approver' : 'Company Manager') }}</small></a><form method="POST" action="{{ route('logout') }}">@csrf<button class="btn link" type="submit">Sign out ↗</button></form></div></header>
