@@ -80,4 +80,28 @@ Route::middleware(['auth', 'active', 'auth.session'])->group(function () {
     Route::middleware('super_admin')->group(function () {
         Route::resource('users', \App\Http\Controllers\UserController::class)->except(['show', 'destroy']);
     });
+    Route::prefix('invoicing')->name('invoicing.')->group(function () {
+        $controller = \App\Modules\Invoicing\Http\Controllers\InvoiceController::class;
+        Route::get('/', [$controller, 'index'])->name('index');
+        Route::get('/create', [$controller, 'create'])->name('create');
+        Route::post('/', [$controller, 'store'])->name('store');
+        Route::get('/masters', [$controller, 'masters'])->name('masters');
+        Route::get('/customers', [$controller, 'customers'])->name('customers.index');
+        Route::get('/customers/{customer}/edit', [$controller, 'editCustomer'])->middleware('approver')->name('customers.edit');
+        Route::put('/customers/{customer}', [$controller, 'updateCustomer'])->middleware('approver')->name('customers.update');
+        Route::get('/products-services', [$controller, 'items'])->name('items.index');
+        Route::get('/settings', [$controller, 'settingsPage'])->name('settings.index');
+        Route::get('/design', [$controller, 'designPage'])->middleware('super_admin')->name('design.index');
+        Route::put('/design', [$controller, 'design'])->middleware('super_admin')->name('design.update');
+        Route::post('/customers', [$controller, 'customer'])->middleware('approver')->name('customers.store');
+        Route::post('/items', [$controller, 'item'])->middleware('approver')->name('items.store');
+        Route::put('/settings', [$controller, 'settings'])->middleware('approver')->name('settings.update');
+        Route::get('/{invoice}', [$controller, 'show'])->name('show');
+        Route::get('/{invoice}/pdf', [$controller, 'pdf'])->name('pdf');
+        Route::get('/{invoice}/xml', [$controller, 'xml'])->name('xml');
+        Route::post('/{invoice}/approve', [$controller, 'approve'])->middleware('approver')->name('approve');
+        Route::post('/{invoice}/paid', [$controller, 'paid'])->middleware('approver')->name('paid');
+        Route::delete('/{invoice}', [$controller, 'destroy'])->middleware('super_admin')->name('destroy');
+    });
+    Route::get('/zatca', [\App\Modules\Zatca\Http\Controllers\ZatcaController::class, 'index'])->name('zatca.index');
 });

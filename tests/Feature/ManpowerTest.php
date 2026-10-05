@@ -502,7 +502,7 @@ class ManpowerTest extends TestCase
     {
         $this->manager->update(['is_active' => false]);
         $this->artisan('manpower:reset-password', ['email' => $this->manager->email, '--activate' => true])
-            ->expectsQuestion('New password (at least 10 characters)', 'New-strong-password')
+            ->expectsQuestion('New password (at least 12 characters)', 'New-strong-password')
             ->expectsQuestion('Confirm new password', 'New-strong-password')->assertExitCode(0);
         $this->assertTrue($this->manager->fresh()->is_active);
         $this->assertTrue(Hash::check('New-strong-password', $this->manager->fresh()->password));
@@ -534,6 +534,40 @@ class ManpowerTest extends TestCase
             ->assertSee('data-menu-toggle', false)
             ->assertSee('aria-controls="sidebar"', false)
             ->assertSee(asset('css/navigation.css'), false);
+    }
+
+    public function test_dashboard_provides_scoped_workforce_analytics()
+    {
+        $visible = $this->employee(['name' => 'Analytics Visible']);
+        $restricted = $this->employee(['name' => 'Analytics Restricted', 'company_id' => $this->other->id]);
+        $this->entry($visible, ['status' => 'pending']);
+        $this->entry($restricted, ['status' => 'pending']);
+
+        $this->actingAs($this->manager)->get(route('dashboard', ['month' => now()->format('Y-m')]))
+            ->assertOk()
+            ->assertSee('Workforce intelligence')
+            ->assertSee('Six-month operating trend')
+            ->assertSee('Company performance')
+            ->assertSee('Workforce composition')
+            ->assertSee('Invoice analytics')
+            ->assertSee('1 timesheet entries')
+            ->assertDontSee('Restricted Company');
+    }
+
+    public function test_security_headers_are_applied_to_web_responses()
+    {
+        $this->get(route('login'))
+            ->assertHeader('X-Content-Type-Options', 'nosniff')
+            ->assertHeader('X-Frame-Options', 'SAMEORIGIN')
+            ->assertHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+            ->assertHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    }
+
+    public function test_new_accounts_require_a_strong_password()
+    {
+        $payload = ['name' => 'Weak Account', 'username' => 'weak_account', 'email' => 'ignored@test.local', 'password' => 'alllowercase12', 'password_confirmation' => 'alllowercase12', 'role' => 'manager', 'is_active' => 1, 'companies' => [$this->company->id]];
+        $this->actingAs($this->admin)->post(route('users.store'), $payload)->assertSessionHasErrors('password');
+        $this->assertDatabaseMissing('users', ['username' => 'weak_account']);
     }
     public function test_timesheet_screens_do_not_show_pay_rates()
     {

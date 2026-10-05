@@ -11,8 +11,10 @@ class ResetManpowerPassword extends Command
     {
         $user = User::where('email', $this->argument('email'))->first();
         if (!$user) { $this->error('Account not found.'); return 1; }
-        $password = $this->secret('New password (at least 10 characters)');
-        if (strlen((string) $password) < 10) { $this->error('Use at least 10 characters.'); return 1; }
+        $password = $this->secret('New password (at least 12 characters)');
+        if (strlen((string) $password) < 12 || !preg_match('/^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9@#$%^&*!?._-]).+$/', (string) $password)) {
+            $this->error('Use at least 12 characters with upper and lower case plus a number or symbol.'); return 1;
+        }
         $confirm = $this->secret('Confirm new password');
         if (!hash_equals($password, (string) $confirm)) { $this->error('Passwords do not match.'); return 1; }
         $user->password = Hash::make($password); $user->remember_token = null;

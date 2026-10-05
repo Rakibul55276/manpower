@@ -19,7 +19,7 @@ class UserController extends Controller
         $data = $request->validate([
             'name' => 'required|string|max:150',
             'username' => ['required', 'alpha_dash', 'max:50', Rule::unique('users')->ignore($user->id)],
-            'password' => ($user->exists ? 'nullable' : 'required').'|string|min:10|confirmed',
+            'password' => [($user->exists ? 'nullable' : 'required'), 'string', 'min:12', 'confirmed', 'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9@#$%^&*!?._-]).+$/'],
             'role' => 'required|in:super_admin,admin,manager', 'is_active' => 'required|boolean',
             'companies' => 'nullable|array', 'companies.*' => 'integer|distinct|exists:companies,id',
         ]);

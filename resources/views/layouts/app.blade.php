@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>@yield('title', 'Dashboard') · Manpower</title><link rel="stylesheet" href="{{ asset('css/manpower.css') }}"><link rel="stylesheet" href="{{ asset('css/navigation.css') }}"><script defer src="{{ asset('js/manpower.js') }}"></script></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>@yield('title', 'Dashboard') · Manpower</title><link rel="stylesheet" href="{{ asset('css/manpower.css') }}"><link rel="stylesheet" href="{{ asset('css/navigation.css') }}"><link rel="stylesheet" href="{{ asset('css/analytics.css') }}"><script defer src="{{ asset('js/manpower.js') }}"></script></head>
 <body>
 <aside class="sidebar" id="sidebar"><a class="brand" href="{{ route('dashboard') }}"><span class="brand-mark">m</span><span>manpower<small>WORKFORCE MANAGEMENT</small></span></a>
 <nav aria-label="Main navigation">
@@ -17,6 +17,17 @@
 <a class="nav-link {{ request()->routeIs('attendance.*') ? 'active' : '' }}" href="{{ route('attendance.index') }}"><span class="nav-icon">◷</span> Attendance & overtime</a>
 <a class="nav-link {{ request()->routeIs('salaries.*') ? 'active' : '' }}" href="{{ route('salaries.index') }}"><span class="nav-icon">▤</span> Monthly salaries</a>
 </div>
+<button class="nav-label nav-section-toggle" type="button" data-nav-section-toggle="invoicing" aria-expanded="true" aria-controls="nav-section-invoicing"><span>Invoice system</span><span class="nav-section-arrow" aria-hidden="true">⌄</span></button>
+<div class="nav-section" id="nav-section-invoicing" data-nav-section="invoicing">
+<a class="nav-link {{ request()->routeIs('invoicing.index') || request()->routeIs('invoicing.show') ? 'active' : '' }}" href="{{ route('invoicing.index') }}"><span class="nav-icon">▤</span> Invoice directory</a>
+<a class="nav-link {{ request()->routeIs('invoicing.create') ? 'active' : '' }}" href="{{ route('invoicing.create') }}"><span class="nav-icon">＋</span> New invoice</a>
+<a class="nav-link {{ request()->routeIs('invoicing.customers.*') ? 'active' : '' }}" href="{{ route('invoicing.customers.index') }}"><span class="nav-icon">♙</span> Customers</a>
+<a class="nav-link {{ request()->routeIs('invoicing.items.*') ? 'active' : '' }}" href="{{ route('invoicing.items.index') }}"><span class="nav-icon">◇</span> Products &amp; services</a>
+<a class="nav-link {{ request()->routeIs('invoicing.settings.*') ? 'active' : '' }}" href="{{ route('invoicing.settings.index') }}"><span class="nav-icon">⚙</span> Invoice settings</a>
+@if(auth()->user()->isSuperAdmin())<a class="nav-link {{ request()->routeIs('invoicing.design.*') ? 'active' : '' }}" href="{{ route('invoicing.design.index') }}"><span class="nav-icon">✦</span> Invoice design studio</a>@endif
+</div>
+<button class="nav-label nav-section-toggle" type="button" data-nav-section-toggle="zatca" aria-expanded="true" aria-controls="nav-section-zatca"><span>ZATCA integration</span><span class="nav-section-arrow" aria-hidden="true">⌄</span></button>
+<div class="nav-section" id="nav-section-zatca" data-nav-section="zatca"><a class="nav-link {{ request()->routeIs('zatca.*') ? 'active' : '' }}" href="{{ route('zatca.index') }}"><span class="nav-icon">◇</span> Integration center</a></div>
 <button class="nav-label nav-section-toggle" type="button" data-nav-section-toggle="organization" aria-expanded="true" aria-controls="nav-section-organization"><span>Organization</span><span class="nav-section-arrow" aria-hidden="true">⌄</span></button>
 <div class="nav-section" id="nav-section-organization" data-nav-section="organization">
 <a class="nav-link {{ request()->routeIs('companies.*') ? 'active' : '' }}" href="{{ route('companies.index') }}"><span class="nav-icon">▦</span> Companies</a>

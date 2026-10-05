@@ -9,7 +9,7 @@ use setasign\Fpdi\Fpdi;
 use setasign\Fpdi\PdfParser\StreamReader;
 class Documents
 {
-    public static function render($view, $data, $paper = 'A4', $orientation = 'portrait')
+    public static function render($view, $data, $paper = 'A4', $orientation = 'portrait', $pageFooter = true)
     {
         $cache = storage_path('app/dompdf');
         if (!is_dir($cache)) { mkdir($cache, 0755, true); }
@@ -21,8 +21,10 @@ class Documents
         $options->set('chroot', storage_path('app'));
         $options->set('fontDir', $cache); $options->set('fontCache', $cache); $options->set('tempDir', $cache);
         $pdf = new Dompdf($options); $pdf->setPaper($paper, $orientation); $pdf->loadHtml(view($view, $data)->render(), 'UTF-8'); $pdf->render();
-        $canvas = $pdf->getCanvas();
-        $canvas->page_text(40, $canvas->get_height() - 30, 'Manpower  |  Page {PAGE_NUM} of {PAGE_COUNT}', $pdf->getFontMetrics()->getFont('DejaVu Sans'), 8, [0.4, 0.5, 0.5]);
+        if ($pageFooter) {
+            $canvas = $pdf->getCanvas();
+            $canvas->page_text(40, $canvas->get_height() - 30, 'Manpower  |  Page {PAGE_NUM} of {PAGE_COUNT}', $pdf->getFontMetrics()->getFont('DejaVu Sans'), 8, [0.4, 0.5, 0.5]);
+        }
         return $pdf->output();
     }
     public static function validateAttachment($path)

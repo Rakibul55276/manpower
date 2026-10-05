@@ -25,7 +25,7 @@ class AuthController extends Controller
     public function profile() { return view('auth.profile'); }
     public function password(Request $request)
     {
-        $data = $request->validate(['current_password' => 'required', 'password' => 'required|string|min:10|confirmed']);
+        $data = $request->validate(['current_password' => 'required', 'password' => ['required', 'string', 'min:12', 'confirmed', 'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9@#$%^&*!?._-]).+$/']]);
         if (!Hash::check($data['current_password'], $request->user()->password)) { return back()->withErrors(['current_password' => 'Current password is incorrect.']); }
         $request->user()->update(['password' => Hash::make($data['password']), 'remember_token' => null]);
         $request->session()->regenerate();
