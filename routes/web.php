@@ -80,7 +80,7 @@ Route::middleware(['auth', 'active', 'auth.session'])->group(function () {
     Route::middleware('super_admin')->group(function () {
         Route::resource('users', \App\Http\Controllers\UserController::class)->except(['show', 'destroy']);
     });
-    Route::prefix('invoicing')->name('invoicing.')->group(function () {
+    Route::prefix('invoicing')->name('invoicing.')->middleware(\App\Http\Middleware\EnsureInvoicingEnabled::class)->group(function () {
         $controller = \App\Modules\Invoicing\Http\Controllers\InvoiceController::class;
         Route::get('/', [$controller, 'index'])->name('index');
         Route::get('/create', [$controller, 'create'])->name('create');
@@ -103,5 +103,7 @@ Route::middleware(['auth', 'active', 'auth.session'])->group(function () {
         Route::post('/{invoice}/paid', [$controller, 'paid'])->middleware('approver')->name('paid');
         Route::delete('/{invoice}', [$controller, 'destroy'])->middleware('super_admin')->name('destroy');
     });
-    Route::get('/zatca', [\App\Modules\Zatca\Http\Controllers\ZatcaController::class, 'index'])->name('zatca.index');
+    Route::get('/zatca', [\App\Modules\Zatca\Http\Controllers\ZatcaController::class, 'index'])->middleware(\App\Http\Middleware\EnsureZatcaEnabled::class)->name('zatca.index');
 });
+
+require __DIR__.'/safety_shop.php';

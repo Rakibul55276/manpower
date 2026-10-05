@@ -58,7 +58,10 @@ class DashboardController extends Controller
             return ['month'=>$key,'label'=>$point->format('M'),'hours'=>(int)$hours,'payroll'=>(int)$pay->sum('net_pay_cents')];
         });
         $maxHours=max(1,(int)$trend->max('hours')); $maxPayroll=max(1,(int)$trend->max('payroll'));
-        $invoiceStats = ['draft'=>Invoice::where('status','draft')->count(),'approved'=>Invoice::where('status','approved')->count(),'paid'=>Invoice::where('status','paid')->count(),'value'=>Invoice::whereIn('status',['approved','paid'])->sum('total_cents')];
+        $invoiceStats = [];
+        if (config('invoicing.enabled')) {
+            $invoiceStats = ['draft'=>Invoice::where('status','draft')->count(),'approved'=>Invoice::where('status','approved')->count(),'paid'=>Invoice::where('status','paid')->count(),'value'=>Invoice::whereIn('status',['approved','paid'])->sum('total_cents')];
+        }
         return view('dashboard', compact('month', 'stats', 'previous', 'changes', 'recent', 'pending', 'companies', 'companyAnalytics', 'trend', 'maxHours', 'maxPayroll', 'invoiceStats'));
     }
 }

@@ -16,11 +16,29 @@ class InvoiceModuleTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config(['invoicing.enabled' => true, 'zatca.enabled' => true]);
         $this->admin=User::create(['name'=>'Invoice Admin','username'=>'invoice_admin','email'=>'invoice_admin@test.local','password'=>Hash::make('Strong-password-123'),'role'=>'super_admin','is_active'=>true]);
         $this->manager=User::create(['name'=>'Invoice Manager','username'=>'invoice_manager','email'=>'invoice_manager@test.local','password'=>Hash::make('Strong-password-123'),'role'=>'manager','is_active'=>true]);
     }
 
     private function login($user){return $this->withSession(['password_hash_web'=>$user->getAuthPassword()])->actingAs($user);}
+    public function test_disabled_invoicing_blocks_requests_and_leaves_other_modules_available()
+    {
+        config(['invoicing.enabled' => false]);
+        $this->login($this->admin)->get(route('invoicing.index'))->assertNotFound();
+        $this->post(route('invoicing.store'), $this->payload())->assertNotFound();
+        $this->assertDatabaseCount('invoices', 0);
+        $this->get(route('dashboard'))->assertOk()->assertDontSee('Invoice system')->assertDontSee('Invoice analytics')->assertDontSee('invoice drafts')->assertDontSee('Invoice value')->assertSee('Monthly salaries');
+        $this->get(route('zatca.index'))->assertOk();
+    }
+
+    public function test_zatca_can_be_disabled_independently()
+    {
+        config(['zatca.enabled' => false]);
+        $this->login($this->admin)->get(route('zatca.index'))->assertNotFound();
+        $this->get(route('invoicing.index'))->assertOk()->assertDontSee('ZATCA integration');
+    }
+
     private function payload(){return ['document_type'=>'invoice','invoice_type'=>'standard','customer_id'=>InvoiceCustomer::where('customer_type','business')->firstOrFail()->id,'issue_date'=>now()->format('Y-m-d'),'notes'=>'Demo payment terms','lines'=>[['description'=>'Consulting service','quantity'=>'2.00','unit_code'=>'HUR','unit_price'=>'100.00','discount'=>'10.00','tax_category'=>'standard','tax_rate_units'=>1500]]];}
 
     public function test_invoice_module_seeds_masters_and_calculates_vat()

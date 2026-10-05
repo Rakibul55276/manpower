@@ -1,0 +1,10 @@
+#shop-checkout { min-width: 0; }
+#shop-checkout .table-wrap { max-width: 100%; }
+#shop-checkout td input[type="number"] { width: 90px; min-width: 0; }
+@media print {
+    .sidebar, .topbar, .footer, .shop-no-print, .notice { display: none !important; }
+    .app-shell, .main { margin: 0 !important; padding: 0 !important; width: 100% !important; }
+    body { background: white !important; color: black !important; }
+    .card.safety-shop-receipt { display: block !important; box-shadow: none !important; border: 0 !important; }
+    .safety-shop-receipt .table-wrap { overflow: visible !important; }
+}

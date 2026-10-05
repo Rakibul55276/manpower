@@ -17,6 +17,7 @@
 <a class="nav-link {{ request()->routeIs('attendance.*') ? 'active' : '' }}" href="{{ route('attendance.index') }}"><span class="nav-icon">◷</span> Attendance & overtime</a>
 <a class="nav-link {{ request()->routeIs('salaries.*') ? 'active' : '' }}" href="{{ route('salaries.index') }}"><span class="nav-icon">▤</span> Monthly salaries</a>
 </div>
+@if(config('invoicing.enabled'))
 <button class="nav-label nav-section-toggle" type="button" data-nav-section-toggle="invoicing" aria-expanded="true" aria-controls="nav-section-invoicing"><span>Invoice system</span><span class="nav-section-arrow" aria-hidden="true">⌄</span></button>
 <div class="nav-section" id="nav-section-invoicing" data-nav-section="invoicing">
 <a class="nav-link {{ request()->routeIs('invoicing.index') || request()->routeIs('invoicing.show') ? 'active' : '' }}" href="{{ route('invoicing.index') }}"><span class="nav-icon">▤</span> Invoice directory</a>
@@ -26,8 +27,28 @@
 <a class="nav-link {{ request()->routeIs('invoicing.settings.*') ? 'active' : '' }}" href="{{ route('invoicing.settings.index') }}"><span class="nav-icon">⚙</span> Invoice settings</a>
 @if(auth()->user()->isSuperAdmin())<a class="nav-link {{ request()->routeIs('invoicing.design.*') ? 'active' : '' }}" href="{{ route('invoicing.design.index') }}"><span class="nav-icon">✦</span> Invoice design studio</a>@endif
 </div>
+@endif
+@if(config('zatca.enabled'))
 <button class="nav-label nav-section-toggle" type="button" data-nav-section-toggle="zatca" aria-expanded="true" aria-controls="nav-section-zatca"><span>ZATCA integration</span><span class="nav-section-arrow" aria-hidden="true">⌄</span></button>
 <div class="nav-section" id="nav-section-zatca" data-nav-section="zatca"><a class="nav-link {{ request()->routeIs('zatca.*') ? 'active' : '' }}" href="{{ route('zatca.index') }}"><span class="nav-icon">◇</span> Integration center</a></div>
+@endif
+@if(config('safety_shop.enabled'))
+<button class="nav-label nav-section-toggle" type="button" data-nav-section-toggle="safety-shop" aria-expanded="true" aria-controls="nav-section-safety-shop"><span>Safety shop</span><span class="nav-section-arrow" aria-hidden="true">⌄</span></button>
+<div class="nav-section" id="nav-section-safety-shop" data-nav-section="safety-shop">
+<a class="nav-link {{ request()->routeIs('safety-shop.index','safety-shop.products.*')?'active':'' }}" href="{{ route('safety-shop.products.index') }}"><span class="nav-icon">▦</span> Stock overview</a>
+<a class="nav-link {{ request()->routeIs('safety-shop.sales.index','safety-shop.sales.show')?'active':'' }}" href="{{ route('safety-shop.sales.index') }}"><span class="nav-icon">▤</span> Sales receipts</a>
+@if(auth()->user()->canApprove())
+<a class="nav-link {{ request()->routeIs('safety-shop.sales.create')?'active':'' }}" href="{{ route('safety-shop.sales.create') }}"><span class="nav-icon">▥</span> Barcode checkout</a>
+@endif
+<a class="nav-link {{ request()->routeIs('safety-shop.stock.index')?'active':'' }}" href="{{ route('safety-shop.stock.index') }}"><span class="nav-icon">⇄</span> Movement ledger</a>
+@if(auth()->user()->canApprove())
+<a class="nav-link {{ request()->routeIs('safety-shop.stock.create')?'active':'' }}" href="{{ route('safety-shop.stock.create') }}"><span class="nav-icon">＋</span> New stock movement</a>
+@endif
+@foreach(['categories'=>'Categories','suppliers'=>'Suppliers','locations'=>'Locations','reports'=>'Reports'] as $feature=>$label)
+<a class="nav-link {{ request()->routeIs('safety-shop.'.$feature.'.*')?'active':'' }}" href="{{ route('safety-shop.'.$feature.'.index') }}"><span class="nav-icon">◇</span> {{ $label }}</a>
+@endforeach
+</div>
+@endif
 <button class="nav-label nav-section-toggle" type="button" data-nav-section-toggle="organization" aria-expanded="true" aria-controls="nav-section-organization"><span>Organization</span><span class="nav-section-arrow" aria-hidden="true">⌄</span></button>
 <div class="nav-section" id="nav-section-organization" data-nav-section="organization">
 <a class="nav-link {{ request()->routeIs('companies.*') ? 'active' : '' }}" href="{{ route('companies.index') }}"><span class="nav-icon">▦</span> Companies</a>

@@ -109,3 +109,73 @@ Laravel 8 and PHP 7.4 are retained to match the existing XAMPP installation. Bot
 ## License
 
 The repository's existing GNU GPL v3 license is preserved in `LICENSE`. Third-party packages retain their respective licenses.
+## Module availability
+
+The invoice module is disabled by default with `INVOICING_ENABLED=false`.
+Its menu is hidden and invoice requests return 404 while disabled. Existing
+invoice data is preserved, and other modules keep their existing behavior.
+For later invoice work, set `INVOICING_ENABLED=true` in `.env` and run
+`php artisan config:clear` (or rebuild the configuration cache).
+
+ZATCA has its own independent switch, `ZATCA_ENABLED=false`, which hides its menu and blocks its route. Set it to `true` and clear the configuration cache when ready.
+
+## Safety shop inventory
+
+The independent safety shop module is available at `/safety-shop` with
+`SAFETY_SHOP_ENABLED=true`. Its switch, tables, routes, models, service, and
+views are separate from invoicing, ZATCA, employees, attendance, and payroll.
+Run `php artisan migrate` to install its six `safety_shop_*` tables.
+
+1. Add categories, suppliers, and locations in the module's master directories.
+2. Create products with unique SKUs, size/brand, unit, certification, current
+   cost, selling price, and reorder level. Each size/variant uses its own SKU.
+3. Receive opening stock or supplier deliveries into a location.
+4. Post issues/sales, customer or unused returns, signed adjustments, or
+   transfers. Quantity is in whole stock units; an issue needs a recipient,
+   and every movement needs a reason. Negative balances are rejected.
+5. Review stock by product/location, low-stock alerts, current-cost valuation,
+   and the filtered movement ledger. Export stock or movement reports as CSV.
+
+All active users can view this shared shop inventory. Admins and super admins
+can maintain products/masters and post movements. Records are deactivated
+instead of deleted, and posted movements are immutable. Correct stock through
+a compensating movement referencing the original entry. Transfers update both
+locations atomically. A unique request key prevents accidental duplicate posts.
+Ledger balances follow posting order; document dates can be backdated but cannot
+be in the future. Stock valuation uses the product's current unit cost.
+
+This module records physical inventory; issues and sales do not create invoices,
+post to accounting, or change payroll. It does not manage purchase orders, payment
+accounts, serial numbers, or expiry batches. Disable it independently using
+`SAFETY_SHOP_ENABLED=false` and clear/rebuild the configuration cache.
+
+### Barcode sales
+
+Products can have a unique barcode (preserving leading zeros) and a selling
+price in SAR. Use a keyboard-style barcode scanner or type the code in Barcode
+checkout and press Enter. Repeated scans increase quantity. Select a location,
+scan products, review quantities, enter cash/card/bank payment received, and
+complete the sale. The server validates current prices and available stock,
+then creates a permanent receipt and reduces all stock in one transaction.
+A rejected sale changes no stock. Receipts preserve the names and prices at sale
+time and can be printed. Cash overpayment shows change; card/bank must match
+the total. No payment provider is charged by this module.
+
+Safety shop sales remain separate from invoicing and ZATCA. Product prices
+are final checkout prices; this module does not calculate taxes or issue tax
+invoices. For returned goods, post a stock return referencing the sale receipt;
+refund payments are handled outside the inventory ledger.
+
+### Feature directories
+
+Each safety shop feature has its own directory under `app/Modules/SafetyShop`:
+`Products`, `Categories`, `Suppliers`, `Locations`, `Stock`, `Sales`, and
+`Reports`. Each owns its routes and controller; models/services stay with the
+feature that owns them. `Shared` holds common master-record infrastructure.
+Views use matching directories under `resources/views/safety-shop`. Barcode
+checkout assets live under `public/js/safety-shop/sales` and
+`public/css/safety-shop/sales`.
+
+Dedicated directories are available at `/safety-shop/products`, `/categories`,
+`/suppliers`, `/locations`, `/stock`, `/sales`, and `/reports` (all prefixed with
+`/safety-shop`). Barcode checkout is at `/safety-shop/sales/checkout`.
