@@ -7,6 +7,7 @@ class SaleLine extends Model
 {
     protected $table = 'safety_shop_sale_lines';
     protected $guarded = ['id'];
-    protected $casts = ['quantity'=>'integer','price_cents'=>'integer','total_cents'=>'integer'];
+    protected $casts = ['quantity'=>'integer','cost_cents'=>'integer','price_cents'=>'integer','total_cents'=>'integer'];
     public function sale() { return $this->belongsTo(Sale::class); }
+    public function returnLines() { return $this->hasMany(SaleReturnLine::class); }
 }

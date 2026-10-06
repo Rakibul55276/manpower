@@ -5,12 +5,17 @@ use App\Models\Payroll;
 use Dompdf\Dompdf;
 use Dompdf\Options;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Schema;
+use App\Modules\SafetyShop\Shared\Models\ReceiptSetting;
 use setasign\Fpdi\Fpdi;
 use setasign\Fpdi\PdfParser\StreamReader;
 class Documents
 {
     public static function render($view, $data, $paper = 'A4', $orientation = 'portrait', $pageFooter = true)
     {
+        $brand = static::branding();
+        $data['documentBrand'] = $brand;
+        $data['documentBrandLogo'] = static::brandingLogo($brand);
         $cache = storage_path('app/dompdf');
         if (!is_dir($cache)) { mkdir($cache, 0755, true); }
         $options = new Options;
@@ -23,7 +28,7 @@ class Documents
         $pdf = new Dompdf($options); $pdf->setPaper($paper, $orientation); $pdf->loadHtml(view($view, $data)->render(), 'UTF-8'); $pdf->render();
         if ($pageFooter) {
             $canvas = $pdf->getCanvas();
-            $canvas->page_text(40, $canvas->get_height() - 30, 'Manpower  |  Page {PAGE_NUM} of {PAGE_COUNT}', $pdf->getFontMetrics()->getFont('DejaVu Sans'), 8, [0.4, 0.5, 0.5]);
+            $canvas->page_text(40, $canvas->get_height() - 30, ($brand ? $brand->company_name : 'Manpower').'  |  Page {PAGE_NUM} of {PAGE_COUNT}', $pdf->getFontMetrics()->getFont('DejaVu Sans'), 8, [0.4, 0.5, 0.5]);
         }
         return $pdf->output();
     }
@@ -63,6 +68,17 @@ class Documents
         return $payroll->employment_type === 'own'
             ? static::render('pdf.payslip-own', compact('payroll'), 'A4', 'landscape')
             : static::render('pdf.payslip', compact('payroll'));
+    }
+    public static function branding()
+    {
+        return Schema::hasTable('safety_shop_receipt_settings') ? ReceiptSetting::first() : null;
+    }
+    public static function brandingLogo($brand = null)
+    {
+        $brand = $brand ?: static::branding();
+        if (!$brand || !$brand->logo_path || !Storage::disk('local')->exists($brand->logo_path)) return null;
+        $path=Storage::disk('local')->path($brand->logo_path);
+        return 'data:'.mime_content_type($path).';base64,'.base64_encode(file_get_contents($path));
     }
     public static function download($bytes, $filename)
     {

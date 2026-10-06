@@ -6,6 +6,9 @@ use App\Modules\SafetyShop\Products\Models\Product;
 use App\Modules\SafetyShop\Stock\Models\Stock;
 use App\Modules\SafetyShop\Stock\Models\Movement;
 use App\Modules\SafetyShop\Sales\Models\Sale;
+use App\Modules\SafetyShop\Sales\Models\SaleReturn;
+use App\Modules\SafetyShop\Sales\Models\Customer;
+use App\Modules\SafetyShop\Reports\Services\FinancialReport;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
@@ -33,7 +36,7 @@ class SafetyShopTest extends TestCase
     }
     private function sale($quantity=2,$extra=[])
     {
-        return array_merge(['request_key'=>(string)Str::uuid(),'location_id'=>$this->location->id,'customer'=>'Counter customer','payment_method'=>'cash','paid'=>'60.00','lines'=>[['product_id'=>$this->product->id,'quantity'=>$quantity,'price_cents'=>2500]]],$extra);
+        return array_merge(['request_key'=>(string)Str::uuid(),'location_id'=>$this->location->id,'customer'=>'Counter customer','customer_phone'=>'+966 55 123 4567','payment_method'=>'cash','paid'=>'60.00','lines'=>[['product_id'=>$this->product->id,'quantity'=>$quantity,'price_cents'=>2500]]],$extra);
     }
     private function receive($quantity=10) { $this->login()->post(route('safety-shop.stock.store'),$this->movement('receipt',$quantity))->assertSessionHasNoErrors(); }
     public function test_receipt_issue_return_and_adjustment_keep_ledger_and_balances()
@@ -72,6 +75,10 @@ class SafetyShopTest extends TestCase
         $this->login($this->manager)->get(route('safety-shop.index'))->assertOk();
         $this->post(route('safety-shop.stock.store'),$this->movement())->assertForbidden();
         $this->get(route('safety-shop.sales.create'))->assertForbidden();
+        $this->get(route('safety-shop.returns.index'))->assertOk();
+        $this->get(route('safety-shop.returns.create'))->assertForbidden();
+        $this->get(route('safety-shop.customers.index'))->assertOk();
+        $this->get(route('safety-shop.customers.create'))->assertForbidden();
         $this->post(route('safety-shop.sales.store'),$this->sale())->assertForbidden();
         $this->get(route('safety-shop.products.create'))->assertForbidden();
         $this->get(route('safety-shop.categories.index'))->assertOk();
@@ -97,11 +104,11 @@ class SafetyShopTest extends TestCase
         $this->getJson(route('safety-shop.barcode',['barcode'=>'001234567890','location_id'=>$this->location->id]))->assertOk()->assertJson(['id'=>$this->product->id,'price_cents'=>2500,'available'=>10]);
         $payload=$this->sale();
         $this->post(route('safety-shop.sales.store'),$payload)->assertSessionHasNoErrors();
-        $sale=Sale::firstOrFail(); $this->assertSame(5000,$sale->total_cents); $this->assertSame(6000,$sale->paid_cents);
+        $sale=Sale::firstOrFail(); $this->assertSame(5000,$sale->total_cents); $this->assertSame(6000,$sale->paid_cents); $this->assertSame('+966 55 123 4567',$sale->customer_phone);
         $this->assertDatabaseHas('safety_shop_stocks',['product_id'=>$this->product->id,'quantity'=>8]);
         $this->assertDatabaseHas('safety_shop_movements',['reference'=>'SALE-'.$sale->id,'quantity'=>-2]);
         $this->product->update(['name'=>'Updated helmet','price_cents'=>3500]);
-        $this->get(route('safety-shop.sales.show',$sale))->assertOk()->assertSee('Safety helmet')->assertSee('Print receipt')->assertSee('10.00');
+        $this->get(route('safety-shop.sales.show',$sale))->assertOk()->assertSee('Safety helmet')->assertSee('Print receipt')->assertSee('+966 55 123 4567')->assertSee('10.00');
         $this->post(route('safety-shop.sales.store'),$payload)->assertSessionHasErrors('request_key');
         $this->assertDatabaseCount('safety_shop_sales',1);
         $this->assertDatabaseCount('invoices',0);
@@ -127,15 +134,122 @@ class SafetyShopTest extends TestCase
         $this->post(route('safety-shop.sales.store'),$this->sale(2,['payment_method'=>'card']))->assertSessionHasErrors('paid');
         $this->assertDatabaseCount('safety_shop_sales',0); $this->assertSame(10,(int)Stock::sum('quantity'));
     }
+    public function test_checkout_saves_and_reuses_customer_details()
+    {
+        $this->receive();
+        $first=$this->sale(2,['customer'=>'Eastern Engineering','customer_phone'=>'+966 55 123 4567','customer_email'=>'buyer@example.com','customer_address'=>'Industrial Area, Riyadh']);
+        $this->post(route('safety-shop.sales.store'),$first)->assertSessionHasNoErrors();
+        $customer=Customer::firstOrFail();
+        $this->assertSame('Eastern Engineering',$customer->name);
+        $this->assertSame('+966551234567',$customer->phone);
+        $this->assertSame(1,$customer->purchase_count);
+        $this->assertSame(5000,$customer->lifetime_value_cents);
+        $this->assertDatabaseHas('safety_shop_sales',['customer_id'=>$customer->id,'customer_email'=>'buyer@example.com','customer_address'=>'Industrial Area, Riyadh']);
+
+        $second=$this->sale(1,['customer_id'=>$customer->id,'customer'=>'Eastern Engineering','customer_phone'=>'+966551234567','customer_email'=>'accounts@example.com','customer_address'=>'Updated Riyadh address']);
+        $this->post(route('safety-shop.sales.store'),$second)->assertSessionHasNoErrors();
+        $customer->refresh();
+        $this->assertSame(2,$customer->purchase_count);
+        $this->assertSame(7500,$customer->lifetime_value_cents);
+        $this->assertSame('accounts@example.com',$customer->email);
+        $this->assertDatabaseCount('safety_shop_customers',1);
+        $this->get(route('safety-shop.sales.create'))->assertOk()->assertSee('Saved customer')->assertSee('Eastern Engineering')->assertSee('accounts@example.com');
+    }
+    public function test_discount_vat_and_split_payments_are_calculated_and_printed()
+    {
+        $this->receive();
+        $payload=$this->sale(2,[
+            'discount'=>'10.00','tax_rate'=>'15.00','cash_paid'=>'20.00','card_paid'=>'26.00','bank_paid'=>'0.00',
+        ]);
+        unset($payload['payment_method'],$payload['paid']);
+        $this->login()->post(route('safety-shop.sales.store'),$payload)->assertSessionHasNoErrors();
+        $sale=Sale::firstOrFail();
+        $this->assertSame(5000,$sale->subtotal_cents); $this->assertSame(1000,$sale->discount_cents);
+        $this->assertSame(4000,$sale->taxable_cents); $this->assertSame(1500,$sale->tax_rate_units);
+        $this->assertSame(600,$sale->tax_cents); $this->assertSame(4600,$sale->total_cents);
+        $this->assertSame(2000,$sale->cash_cents); $this->assertSame(2600,$sale->card_cents);
+        $this->assertSame('split',$sale->payment_method);
+        $this->get(route('safety-shop.sales.show',$sale))->assertOk()->assertSee('VAT (15.00%)')->assertSee('Cash')->assertSee('SAR 20.00')->assertSee('Card')->assertSee('SAR 26.00');
+
+        $invalid=$this->sale(1,['discount'=>'30.00','tax_rate'=>'15','cash_paid'=>'0','card_paid'=>'0','bank_paid'=>'0']);
+        unset($invalid['payment_method'],$invalid['paid']);
+        $this->post(route('safety-shop.sales.store'),$invalid)->assertSessionHasErrors('discount');
+    }
+    public function test_receipt_linked_return_restores_stock_and_prevents_over_return()
+    {
+        $this->receive();
+        $this->post(route('safety-shop.sales.store'),$this->sale(2))->assertSessionHasNoErrors();
+        $sale=Sale::with('lines')->firstOrFail();
+
+        $this->getJson(route('safety-shop.returns.lookup',['receipt'=>'SALE-'.$sale->id]))
+            ->assertOk()->assertJson(['customer'=>'Counter customer','lines'=>[['returnable'=>2]]]);
+
+        $payload=['request_key'=>(string)Str::uuid(),'sale_id'=>$sale->id,'refund_method'=>'cash','reason'=>'Unused item in original condition','lines'=>[['sale_line_id'=>$sale->lines->first()->id,'quantity'=>1,'barcode'=>'001234567890']]];
+        $this->post(route('safety-shop.returns.store'),$payload)->assertSessionHasNoErrors();
+        $return=SaleReturn::firstOrFail();
+        $this->assertSame(2500,$return->refund_cents);
+        $this->assertDatabaseHas('safety_shop_stocks',['product_id'=>$this->product->id,'location_id'=>$this->location->id,'quantity'=>9]);
+        $this->assertDatabaseHas('safety_shop_movements',['reference'=>'RETURN-'.$return->id.' / SALE-'.$sale->id,'quantity'=>1]);
+        $this->get(route('safety-shop.returns.show',$return))->assertOk()->assertSee('Counter customer')->assertSee('Unused item in original condition');
+
+        $payload['request_key']=(string)Str::uuid(); $payload['lines'][0]['quantity']=2;
+        $this->post(route('safety-shop.returns.store'),$payload)->assertSessionHasErrors('lines');
+        $payload['request_key']=(string)Str::uuid(); $payload['lines'][0]['quantity']=1; $payload['lines'][0]['barcode']='WRONG';
+        $this->post(route('safety-shop.returns.store'),$payload)->assertSessionHasErrors('lines');
+        $this->assertDatabaseCount('safety_shop_returns',1);
+        $this->assertDatabaseHas('safety_shop_stocks',['product_id'=>$this->product->id,'quantity'=>9]);
+    }
+    public function test_financial_analytics_reconcile_sales_returns_cost_and_profit()
+    {
+        $this->receive();
+        $salePayload=$this->sale(2,['discount'=>'10.00','tax_rate'=>'15.00','cash_paid'=>'46.00','card_paid'=>'0.00','bank_paid'=>'0.00']);
+        unset($salePayload['payment_method'],$salePayload['paid']);
+        $this->post(route('safety-shop.sales.store'),$salePayload)->assertSessionHasNoErrors();
+        $sale=Sale::with('lines')->firstOrFail();
+        $this->post(route('safety-shop.returns.store'),['request_key'=>(string)Str::uuid(),'sale_id'=>$sale->id,'refund_method'=>'cash','reason'=>'Audit reconciliation return','lines'=>[['sale_line_id'=>$sale->lines->first()->id,'quantity'=>1,'barcode'=>'001234567890']]])->assertSessionHasNoErrors();
+
+        $report=app(FinancialReport::class)->build(['from'=>now()->toDateString(),'to'=>now()->toDateString()]);
+        $this->assertSame(5000,$report['summary']['gross_sales']);
+        $this->assertSame(2300,$report['summary']['refunds']);
+        $this->assertSame(2000,$report['summary']['net_revenue']);
+        $this->assertSame(1000,$report['summary']['net_cogs']);
+        $this->assertSame(1000,$report['summary']['gross_profit']);
+        $this->assertSame(300,$report['summary']['vat_collected']);
+        $this->get(route('safety-shop.reports.index'))->assertOk()->assertSee('Financial audit trail')->assertSee('Gross profit / loss');
+        $csv=$this->get(route('safety-shop.reports.financial.csv'))->assertOk();
+        $this->assertStringContainsString('SALE-'.$sale->id,$csv->streamedContent());
+        $this->assertStringContainsString('RETURN-'.SaleReturn::firstOrFail()->id,$csv->streamedContent());
+        $this->get(route('safety-shop.reports.financial.pdf'))->assertOk()->assertHeader('Content-Type','application/pdf');
+    }
     public function test_feature_directories_have_separate_pages_and_master_types()
     {
         $this->login();
-        foreach (['products.index','categories.index','categories.create','suppliers.index','suppliers.create','locations.index','locations.create','stock.index','stock.create','sales.index','sales.create','reports.index','products.create'] as $page) $this->get(route('safety-shop.'.$page))->assertOk();
+        foreach (['products.index','categories.index','categories.create','suppliers.index','suppliers.create','locations.index','locations.create','customers.index','customers.create','stock.index','stock.create','sales.index','sales.create','returns.index','returns.create','reports.index','products.create'] as $page) $this->get(route('safety-shop.'.$page))->assertOk();
         $this->post(route('safety-shop.suppliers.store'),['type'=>'category','name'=>'Separate supplier','is_active'=>1])->assertSessionHasNoErrors();
         $this->assertDatabaseHas('safety_shop_masters',['type'=>'supplier','name'=>'Separate supplier']);
         $this->get(route('safety-shop.categories.index'))->assertDontSee('Separate supplier')->assertDontSee('Save category');
         $this->put(route('safety-shop.categories.update',$this->supplier),['name'=>'Wrong category','is_active'=>1])->assertStatus(422);
         $this->get(route('safety-shop.locations.edit',$this->location))->assertOk()->assertSee('Edit location');
+    }
+    public function test_customer_master_supports_search_create_and_edit_without_deleting_history()
+    {
+        $this->login()->post(route('safety-shop.customers.store'),['name'=>'Al Noor Trading','phone'=>'+966 55 987 6543','email'=>'buyer@alnoor.test','address'=>'Riyadh','is_active'=>1])->assertSessionHasNoErrors();
+        $customer=Customer::firstOrFail();
+        $this->assertSame('+966559876543',$customer->phone);
+        $this->get(route('safety-shop.customers.index',['search'=>'9876']))->assertOk()->assertSee('Al Noor Trading')->assertSee('buyer@alnoor.test');
+        $this->put(route('safety-shop.customers.update',$customer),['name'=>'Al Noor Safety Trading','phone'=>'+966559876543','email'=>'accounts@alnoor.test','address'=>'Riyadh Industrial Area','is_active'=>0])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('safety_shop_customers',['id'=>$customer->id,'name'=>'Al Noor Safety Trading','is_active'=>0]);
+        $this->assertDatabaseHas('activity_logs',['action'=>'Updated safety shop customer','subject'=>'Al Noor Safety Trading']);
+    }
+    public function test_only_super_admin_manages_receipt_company_details_and_placeholder()
+    {
+        $this->login($this->manager)->get(route('document-branding.edit'))->assertForbidden();
+        $this->login()->get(route('document-branding.edit'))->assertOk()->assertSee('professional “SS” placeholder');
+        $this->put(route('document-branding.update'),['company_name'=>'Professional Safety Trading','tagline'=>'Protection at work','vat_number'=>'300000000000003','commercial_registration'=>'1012345678','phone'=>'+966 11 000 0000','email'=>'sales@example.com','website'=>'https://example.com','address'=>'King Fahd Road','city'=>'Riyadh','postal_code'=>'12345','footer_text'=>'Thank you for choosing us.'])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('safety_shop_receipt_settings',['company_name'=>'Professional Safety Trading','vat_number'=>'300000000000003']);
+        $this->assertDatabaseHas('activity_logs',['action'=>'Updated global document branding']);
+        $this->receive(); $this->post(route('safety-shop.sales.store'),$this->sale())->assertSessionHasNoErrors();
+        $this->get(route('safety-shop.sales.show',Sale::firstOrFail()))->assertOk()->assertSee('PROFESSIONAL SAFETY TRADING')->assertSee('VAT 300000000000003')->assertSee('King Fahd Road');
     }
     public function test_low_stock_and_csv_filters_match_results_and_escape_formulas()
     {

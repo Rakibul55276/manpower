@@ -7,6 +7,7 @@ use App\Modules\SafetyShop\Stock\Models\Stock;
 use App\Modules\SafetyShop\Stock\Models\Movement;
 use App\Modules\SafetyShop\Stock\Services\InventoryService;
 use App\Modules\SafetyShop\Stock\Services\LedgerQuery;
+use App\Modules\SafetyShop\Sales\Models\Sale;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 class StockController extends Controller
@@ -15,7 +16,10 @@ class StockController extends Controller
     public function create()
     {
         $products=Product::where('is_active',true)->orderBy('name')->get(); $locations=Master::where('type','location')->where('is_active',true)->orderBy('name')->get(); $suppliers=Master::where('type','supplier')->where('is_active',true)->orderBy('name')->get(); $requestKey=(string)Str::uuid();
-        return view('safety-shop.stock.form',compact('products','locations','suppliers','requestKey'));
+        $recipients=Sale::query()->whereNotNull('customer')->where('customer','<>','')->distinct()->pluck('customer')
+            ->merge(Movement::query()->whereNotNull('recipient')->where('recipient','<>','')->distinct()->pluck('recipient'))
+            ->map(fn ($recipient) => trim($recipient))->filter()->unique(fn ($recipient) => mb_strtolower($recipient))->sort()->values();
+        return view('safety-shop.stock.form',compact('products','locations','suppliers','recipients','requestKey'));
     }
     public function store(Request $r, InventoryService $service)
     {

@@ -8,7 +8,8 @@
 </style>
 </head>
 <body>
-<div class="hero"><table><tr><td><div class="kicker">Manpower Operations</div><h1>{{ $workforce === 'own' ? 'Monthly Attendance Summary' : 'Monthly Timesheet Summary' }}</h1><div>One consolidated row per employee - repeated daily details removed</div></td><td class="period"><strong>{{ \Carbon\Carbon::createFromFormat('!Y-m', $month)->format('F Y') }}</strong><br>Generated {{ now()->format('d M Y, H:i') }} Riyadh time</td></tr></table></div>
+@include('pdf.company-brand')
+<div class="hero"><table><tr><td><div class="kicker">{{ $documentBrand ? $documentBrand->company_name : 'Manpower Operations' }}</div><h1>{{ $workforce === 'own' ? 'Monthly Attendance Summary' : 'Monthly Timesheet Summary' }}</h1><div>One consolidated row per employee - repeated daily details removed</div></td><td class="period"><strong>{{ \Carbon\Carbon::createFromFormat('!Y-m', $month)->format('F Y') }}</strong><br>Generated {{ now()->format('d M Y, H:i') }} Riyadh time</td></tr></table></div>
 <table class="summary"><tr>
 <td><span class="label">Employees</span><span class="value">{{ number_format($rows->count()) }}</span></td>
 <td><span class="label">Time entries</span><span class="value">{{ number_format($entries->count()) }}</span></td>

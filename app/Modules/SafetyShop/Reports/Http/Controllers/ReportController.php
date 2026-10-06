@@ -5,10 +5,17 @@ use App\Modules\SafetyShop\Products\Models\Product;
 use App\Modules\SafetyShop\Stock\Models\Stock;
 use App\Modules\SafetyShop\Products\Services\CatalogQuery;
 use App\Modules\SafetyShop\Stock\Services\LedgerQuery;
+use App\Modules\SafetyShop\Reports\Services\FinancialReport;
+use App\Services\Documents;
 use Illuminate\Http\Request;
 class ReportController extends Controller
 {
-    public function index() { return view('safety-shop.reports.index'); }
+    public function index(Request $r, FinancialReport $financial)
+    {
+        $filters=$r->validate(['from'=>'nullable|date','to'=>'nullable|date|after_or_equal:from']);
+        $report=$financial->build($filters);
+        return view('safety-shop.reports.index',$report);
+    }
     private function productsQuery(Request $r) { return (new CatalogQuery)->build($r); }
     private function movementsQuery(Request $r) { return (new LedgerQuery)->build($r); }
     public function export(Request $r)
@@ -23,6 +30,18 @@ class ReportController extends Controller
             }
             fclose($out);
         },$ledger?'safety-shop-movements.csv':'safety-shop-stock.csv',['Content-Type'=>'text/csv; charset=UTF-8']);
+    }
+
+    public function financialCsv(Request $r, FinancialReport $financial)
+    {
+        $filters=$r->validate(['from'=>'nullable|date','to'=>'nullable|date|after_or_equal:from']); [$from,$to]=$financial->period($filters); $events=$financial->events($from,$to);
+        return response()->streamDownload(function() use($events){ $out=fopen('php://output','w'); fwrite($out,"\xEF\xBB\xBF"); fputcsv($out,['Date','Type','Number','Original receipt','Customer','Location','Gross SAR','Discount SAR','VAT SAR','Refund SAR','Net revenue SAR','Cost SAR','Profit/Loss SAR','Method','User']); foreach($events as $e){$values=[$e->date->format('Y-m-d H:i'),$e->type,$e->number,$e->reference,$e->customer,$e->location,$e->gross/100,$e->discount/100,$e->vat/100,$e->refund/100,$e->revenue/100,$e->cost/100,$e->profit/100,$e->method,$e->user];fputcsv($out,array_map(fn($v)=>is_string($v)&&preg_match('/^[=+\-@\t\r\n]/',$v)?"'".$v:$v,$values));} fclose($out); },'safety-shop-financial-audit-'.$from->format('Ymd').'-'.$to->format('Ymd').'.csv',['Content-Type'=>'text/csv; charset=UTF-8']);
+    }
+
+    public function financialPdf(Request $r, FinancialReport $financial)
+    {
+        $filters=$r->validate(['from'=>'nullable|date','to'=>'nullable|date|after_or_equal:from']); $report=$financial->build($filters); $report['events']=$financial->events($report['from'],$report['to']);
+        return Documents::download(Documents::render('pdf.safety-shop-financial-audit',$report,'A4','landscape'),'safety-shop-financial-audit-'.$report['from']->format('Ymd').'-'.$report['to']->format('Ymd').'.pdf');
     }
 
 }

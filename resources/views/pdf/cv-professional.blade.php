@@ -9,10 +9,11 @@
 </style>
 </head>
 <body>
+@include('pdf.company-brand')
 <div class="hero">
     <table class="hero-table"><tr>
         <td class="hero-copy">
-            <div class="kicker">Curriculum Vitae</div>
+            <div class="kicker">{{ $documentBrand ? $documentBrand->company_name.' · ' : '' }}Curriculum Vitae</div>
             <h1>{{ $employee->name }}</h1>
             <div class="role">{{ $employee->designation->name }}</div>
             <div class="hero-meta">{{ $employee->company->name }}@if($employee->nationality) &nbsp;|&nbsp; {{ $employee->nationality }}@endif</div>

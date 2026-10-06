@@ -79,6 +79,8 @@ Route::middleware(['auth', 'active', 'auth.session'])->group(function () {
     });
     Route::middleware('super_admin')->group(function () {
         Route::resource('users', \App\Http\Controllers\UserController::class)->except(['show', 'destroy']);
+        Route::get('/document-branding', [\App\Modules\SafetyShop\Shared\Http\Controllers\ReceiptSettingController::class, 'edit'])->name('document-branding.edit');
+        Route::put('/document-branding', [\App\Modules\SafetyShop\Shared\Http\Controllers\ReceiptSettingController::class, 'update'])->name('document-branding.update');
     });
     Route::prefix('invoicing')->name('invoicing.')->middleware(\App\Http\Middleware\EnsureInvoicingEnabled::class)->group(function () {
         $controller = \App\Modules\Invoicing\Http\Controllers\InvoiceController::class;
@@ -107,3 +109,4 @@ Route::middleware(['auth', 'active', 'auth.session'])->group(function () {
 });
 
 require __DIR__.'/safety_shop.php';
+require __DIR__.'/document_library.php';
