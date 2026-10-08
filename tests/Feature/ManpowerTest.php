@@ -76,6 +76,14 @@ class ManpowerTest extends TestCase
         $this->assertGuest();
     }
 
+    public function test_company_admin_login_redirects_to_dashboard_instead_of_super_admin_shop_home()
+    {
+        $this->post(route('login.submit'), ['username'=>$this->approver->username,'password'=>'A-secure-password'])
+            ->assertRedirect(route('dashboard'));
+        $this->assertAuthenticatedAs($this->approver);
+        $this->get(route('dashboard'))->assertOk();
+    }
+
     public function test_every_successful_transaction_has_an_activity_trail()
     {
         $this->actingAs($this->manager)->post(route('logout'))->assertRedirect(route('login'));
@@ -178,10 +186,15 @@ class ManpowerTest extends TestCase
             ->assertSee('Directory Worker')
             ->assertSee($entry->work_date->format('d M Y'));
     }
-    public function test_only_super_admin_can_delete_or_reopen_records()
+    public function test_company_admin_can_edit_and_delete_pending_hours_but_only_super_admin_can_reopen()
     {
         $employee = $this->employee(); $entry = $this->entry($employee, ['status' => 'pending']);
-        $this->actingAs($this->approver)->delete(route('timesheets.destroy', $entry))->assertForbidden();
+        $this->actingAs($this->approver)->get(route('timesheets.edit', $entry))->assertOk();
+        $this->put(route('timesheets.update', $entry), $this->payload(['employee_id'=>$employee->id,'work_date'=>$entry->work_date->format('Y-m-d'),'regular_hours'=>8,'overtime_hours'=>0]))->assertSessionHasNoErrors();
+        $this->assertSame(800,$entry->fresh()->regular_units);
+        $deletable=$this->entry($employee,['status'=>'pending','work_date'=>now()->subDay()->format('Y-m-d')]);
+        $this->delete(route('timesheets.destroy', $deletable))->assertRedirect();
+        $this->assertDatabaseMissing('timesheets',['id'=>$deletable->id]);
         $this->delete(route('employees.destroy', $employee))->assertForbidden();
         $this->delete(route('companies.destroy', $this->other))->assertForbidden();
         $this->post(route('timesheets.review', $entry), ['status' => 'approved'])->assertSessionHasNoErrors();

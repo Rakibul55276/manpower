@@ -17,12 +17,13 @@ Route::middleware('guest')->group(function () {
     Route::get('/login', [\App\Http\Controllers\AuthController::class, 'form'])->name('login');
     Route::post('/login', [\App\Http\Controllers\AuthController::class, 'login'])->middleware('throttle:5,1')->name('login.submit');
 });
-Route::middleware(['auth', 'active', 'auth.session'])->group(function () {
+Route::middleware(['auth', 'active', 'auth.session', 'saas.subscription'])->group(function () {
     Route::get('/', [\App\Http\Controllers\DashboardController::class, 'index'])->name('dashboard');
     Route::post('/logout', [\App\Http\Controllers\AuthController::class, 'logout'])->name('logout');
     Route::get('/profile', [\App\Http\Controllers\AuthController::class, 'profile'])->name('profile');
     Route::put('/profile/password', [\App\Http\Controllers\AuthController::class, 'password'])->name('profile.password');
     Route::get('/employee-photos/{employee}', [\App\Http\Controllers\EmployeeController::class, 'photo'])->name('employees.photo');
+    Route::get('/company-logos/{company}', [\App\Http\Controllers\LookupController::class, 'logo'])->name('companies.logo');
     Route::post('/employees/{employee}/advances', [\App\Http\Controllers\EmployeeAdvanceController::class, 'store'])->name('employees.advances.store');
     foreach (['rental' => 'employees', 'own' => 'own-employees'] as $workforce => $prefix) {
         $controller = \App\Http\Controllers\EmployeeController::class;
@@ -57,7 +58,7 @@ Route::middleware(['auth', 'active', 'auth.session'])->group(function () {
         Route::post('/'.$prefix, [$controller, 'store'])->defaults('workforce', $workforce)->name($prefix.'.store');
         Route::get('/'.$prefix.'/{timesheet}/edit', [$controller, 'edit'])->middleware('approver')->defaults('workforce', $workforce)->name($prefix.'.edit');
         Route::put('/'.$prefix.'/{timesheet}', [$controller, 'update'])->middleware('approver')->defaults('workforce', $workforce)->name($prefix.'.update');
-        Route::delete('/'.$prefix.'/{timesheet}', [$controller, 'destroy'])->middleware('super_admin')->defaults('workforce', $workforce)->name($prefix.'.destroy');
+        Route::delete('/'.$prefix.'/{timesheet}', [$controller, 'destroy'])->middleware('approver')->defaults('workforce', $workforce)->name($prefix.'.destroy');
         Route::post('/'.$prefix.'/{timesheet}/review', [$controller, 'review'])->middleware('approver')->defaults('workforce', $workforce)->name($prefix.'.review');
     }
     foreach (['rental' => 'payrolls', 'own' => 'salaries'] as $workforce => $prefix) {
@@ -79,11 +80,17 @@ Route::middleware(['auth', 'active', 'auth.session'])->group(function () {
         Route::get('/audit-report/export.pdf', [\App\Http\Controllers\AuditReportController::class, 'pdf'])->name('audit.pdf');
     });
     Route::middleware('super_admin')->group(function () {
-        Route::resource('users', \App\Http\Controllers\UserController::class)->except(['show', 'destroy']);
+        Route::resource('users', \App\Http\Controllers\UserController::class)->except(['show']);
         Route::resource('companies.branches', \App\Http\Controllers\BranchController::class)->except(['show']);
         Route::get('/document-branding', [\App\Modules\SafetyShop\Shared\Http\Controllers\ReceiptSettingController::class, 'edit'])->name('document-branding.edit');
         Route::put('/document-branding', [\App\Modules\SafetyShop\Shared\Http\Controllers\ReceiptSettingController::class, 'update'])->name('document-branding.update');
+        Route::put('/document-branding/companies/{company}', [\App\Modules\SafetyShop\Shared\Http\Controllers\ReceiptSettingController::class, 'updateCompany'])->name('document-branding.companies.update');
+        Route::get('/saas/vouchers', [\App\Http\Controllers\SaasVoucherController::class, 'index'])->name('saas.vouchers.index');
+        Route::post('/saas/vouchers', [\App\Http\Controllers\SaasVoucherController::class, 'store'])->name('saas.vouchers.store');
+        Route::put('/saas/companies/{company}/status', [\App\Http\Controllers\SaasVoucherController::class, 'status'])->name('saas.companies.status');
     });
+    Route::get('/subscription', [\App\Http\Controllers\SubscriptionController::class, 'show'])->name('subscription.show');
+    Route::post('/subscription/redeem', [\App\Http\Controllers\SubscriptionController::class, 'redeem'])->name('subscription.redeem');
     Route::prefix('invoicing')->name('invoicing.')->middleware(['super_admin', \App\Http\Middleware\EnsureInvoicingEnabled::class])->group(function () {
         $controller = \App\Modules\Invoicing\Http\Controllers\InvoiceController::class;
         Route::get('/', [$controller, 'index'])->name('index');

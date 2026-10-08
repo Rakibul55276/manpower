@@ -1,24 +1,29 @@
 @extends('layouts.app')
-@section('title', 'User accounts')
+@section('title','User accounts')
+@section('description','Platform users and company teams grouped by access boundary.')
 @section('actions')<a class="btn" href="{{ route('users.create') }}">Add user →</a>@endsection
 @section('content')
 <div class="card">
-    <div class="table-wrap">
-        <table>
-            <thead><tr><th>User</th><th>Role</th><th>Company access</th><th>Status</th><th></th></tr></thead>
-            <tbody>
-            @foreach($users as $account)
-                <tr>
-                    <td><strong>{{ $account->name }}</strong><span class="sub">{{ $account->username }}</span></td>
-                    <td><span class="badge">{{ $account->isSuperAdmin() ? 'Super Admin' : ($account->isCompanyAdmin() ? 'Company Admin' : 'Branch Manager') }}</span></td>
-                    <td class="wrap">{{ $account->isSuperAdmin() ? 'All companies and branches' : (optional($account->company)->name ?: 'No company assigned') }}@if($account->branch)<span class="sub">{{ $account->branch->name }}</span>@endif</td>
-                    <td><span class="badge {{ $account->is_active ? 'active' : 'inactive' }}">{{ $account->is_active ? 'Active' : 'Disabled' }}</span></td>
-                    <td><a class="btn secondary small" href="{{ route('users.edit', $account) }}">Manage</a></td>
-                </tr>
-            @endforeach
-            </tbody>
-        </table>
-    </div>
-    @include('partials.pagination', ['items' => $users])
+<div class="card-head"><div><h2>Platform superadmins</h2><span class="sub">Unrestricted system configuration and all-company access</span></div><span class="badge">{{ $platformUsers->count() }} users</span></div>
+@include('users.partials.account-table',['accounts'=>$platformUsers,'empty'=>'No platform superadmin accounts found.'])
 </div>
+
+<div class="grid-2">
+@forelse($companies as $company)
+<div class="card">
+<div class="card-head"><div><h2>{{ $company->name }}</h2><span class="sub">{{ $company->company_code ?: 'No company code' }} · {{ $company->branches->count() }} {{ Str::plural('branch',$company->branches->count()) }}</span></div><span class="badge {{ $company->is_active ? 'active' : 'inactive' }}">{{ $company->users->count() }} {{ Str::plural('user',$company->users->count()) }}</span></div>
+@include('users.partials.account-table',['accounts'=>$company->users,'empty'=>'No administrator or manager assigned.'])
+<div class="card-body" style="padding-top:12px;padding-bottom:12px;border-top:1px solid var(--line)"><div class="actions"><a class="btn secondary small" href="{{ route('companies.branches.index',$company) }}">Manage branches</a><a class="btn secondary small" href="{{ route('users.create') }}">Add company user</a></div></div>
+</div>
+@empty
+<div class="card full"><div class="empty"><strong>No companies configured</strong><p>Create a company before assigning administrators and branch managers.</p><a class="btn" href="{{ route('companies.create') }}">Add company</a></div></div>
+@endforelse
+</div>
+
+@if($unassignedUsers->isNotEmpty())
+<div class="card">
+<div class="card-head"><div><h2>Unassigned company users</h2><span class="sub">Assign these accounts before they can use company modules</span></div><span class="badge inactive">{{ $unassignedUsers->count() }} users</span></div>
+@include('users.partials.account-table',['accounts'=>$unassignedUsers,'empty'=>'No unassigned users.'])
+</div>
+@endif
 @endsection

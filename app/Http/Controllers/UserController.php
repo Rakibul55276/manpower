@@ -8,14 +8,37 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Database\QueryException;
 class UserController extends Controller
 {
-    public function index() { return view('users.index', ['users' => User::with(['company','branch'])->orderBy('name')->paginate(15)]); }
+    public function index()
+    {
+        $companies=Company::with(['branches'=>fn($q)=>$q->orderBy('name'),'users'=>fn($q)=>$q->with('branch')->orderByRaw("CASE role WHEN 'admin' THEN 0 ELSE 1 END")->orderBy('name')])->orderBy('name')->get();
+        $platformUsers=User::where('role','super_admin')->orderBy('name')->get();
+        $unassignedUsers=User::where('role','<>','super_admin')->whereNull('company_id')->with('branch')->orderBy('name')->get();
+        return view('users.index', compact('companies','platformUsers','unassignedUsers'));
+    }
     public function create() { return $this->form(new User(['role' => 'manager', 'is_active' => true])); }
     public function edit(User $user) { return $this->form($user->load(['company','branch'])); }
     private function form(User $account) { return view('users.form', ['account'=>$account, 'companies'=>Company::orderBy('name')->get(), 'branches'=>Branch::with('company')->orderBy('name')->get()]); }
     public function store(Request $request) { return $this->save($request, new User); }
     public function update(Request $request, User $user) { return $this->save($request, $user); }
+    public function destroy(User $user)
+    {
+        if ($user->id === auth()->id()) return back()->withErrors(['user'=>'You cannot remove your own account.']);
+        if ($user->isSuperAdmin() && User::where('role','super_admin')->where('is_active',true)->count() <= 1) return back()->withErrors(['user'=>'The last active superadmin cannot be removed.']);
+        $name=$user->name; $role=$user->role;
+        try {
+            DB::transaction(function () use ($user,$name,$role) {
+                $user->companies()->detach();
+                $user->delete();
+                ActivityLog::record('Removed account', $name.' · '.$role);
+            });
+        } catch (QueryException $e) {
+            return back()->withErrors(['user'=>'This account is referenced by business or audit history and cannot be deleted. Disable it instead.']);
+        }
+        return redirect()->route('users.index')->with('success','User account removed.');
+    }
     private function save(Request $request, User $user)
     {
         $data = $request->validate([

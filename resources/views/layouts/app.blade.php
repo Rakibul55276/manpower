@@ -80,6 +80,8 @@
 @if(auth()->user()->canApprove())
 <a class="nav-link {{ request()->routeIs('audit.*') ? 'active' : '' }}" href="{{ route('audit.index') }}"><span class="nav-icon">≡</span> Audit reports</a>
 @if(auth()->user()->isSuperAdmin())<a class="nav-link {{ request()->routeIs('document-branding.*') ? 'active' : '' }}" href="{{ route('document-branding.edit') }}"><span class="nav-icon">▣</span> Document branding</a>@endif
+@if(config('saas.saas_voucher_enabled') && auth()->user()->isSuperAdmin())<a class="nav-link {{ request()->routeIs('saas.*') ? 'active' : '' }}" href="{{ route('saas.vouchers.index') }}"><span class="nav-icon">◇</span> SaaS vouchers</a>@endif
+@if(config('saas.saas_voucher_enabled') && !auth()->user()->isSuperAdmin())<a class="nav-link {{ request()->routeIs('subscription.*') ? 'active' : '' }}" href="{{ route('subscription.show') }}"><span class="nav-icon">◇</span> Subscription</a>@endif
 @endif
 </div>
 </nav><div class="sidebar-note">A clear view of your people,<br>their hours, and their pay.<br><br>Currency: SAR · Riyadh time</div></aside>

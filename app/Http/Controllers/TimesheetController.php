@@ -119,14 +119,14 @@ class TimesheetController extends Controller
     public function edit(Timesheet $timesheet)
     {
         $this->check($timesheet); $timesheet->loadMissing('employee');
-        abort_unless($this->canCorrectHours($timesheet), 403, 'Admin can edit only unlocked entries with regular hours below the employee daily target.');
+        abort_unless($this->canCorrectHours($timesheet), 403, 'Only pending, payroll-unlocked entries can be edited by a company admin.');
         return $this->form($timesheet);
     }
     private function canCorrectHours(Timesheet $timesheet)
     {
         if ($timesheet->status === 'approved' || $timesheet->payroll_id) return false;
         if (auth()->user()->isSuperAdmin()) return true;
-        return auth()->user()->isCompanyAdmin() && $timesheet->regular_units < ($timesheet->employee->regular_hours_units ?: 800);
+        return auth()->user()->isCompanyAdmin() && $timesheet->status === 'pending';
     }
     private function form($timesheet)
     {
@@ -171,7 +171,7 @@ class TimesheetController extends Controller
         return redirect()->route($this->prefix().'.index', ['month' => substr($data['entries'][array_key_first($data['entries'])]['work_date'], 0, 7), 'employee_id' => $data['employee_id']])
             ->with('success', count($data['entries']).' dates saved and submitted for Super Admin approval.');
     }
-    public function update(Request $request, Timesheet $timesheet) { $this->check($timesheet); $timesheet->loadMissing('employee'); abort_unless($this->canCorrectHours($timesheet), 403, 'Admin can edit only unlocked entries with short regular hours.'); return $this->save($request, $timesheet); }
+    public function update(Request $request, Timesheet $timesheet) { $this->check($timesheet); $timesheet->loadMissing('employee'); abort_unless($this->canCorrectHours($timesheet), 403, 'Only pending, payroll-unlocked entries can be edited by a company admin.'); return $this->save($request, $timesheet); }
     private function unlocked(Employee $employee, $date)
     {
         if (Payroll::where('employee_id', $employee->id)->where('month', substr($date, 0, 7))->exists()) { throw ValidationException::withMessages(['work_date' => 'Salary has already been generated for this employee and month. Void the draft payroll before changing entries.']); }
@@ -259,13 +259,12 @@ class TimesheetController extends Controller
     }
     public function destroy(Timesheet $timesheet)
     {
-        abort_unless(auth()->user()->isSuperAdmin(), 403);
         $this->check($timesheet);
         DB::transaction(function () use ($timesheet) {
             $employee = Employee::lockForUpdate()->findOrFail($timesheet->employee_id);
             $entry = Timesheet::lockForUpdate()->findOrFail($timesheet->id);
             $this->unlocked($employee, $entry->work_date->format('Y-m-d'));
-            abort_unless($entry->status !== 'approved' && !$entry->payroll_id, 403);
+            abort_unless(!$entry->payroll_id && (auth()->user()->isSuperAdmin() ? $entry->status !== 'approved' : auth()->user()->isCompanyAdmin() && $entry->status === 'pending'), 403);
             $entry->delete(); ActivityLog::record('Deleted hours', 'Timesheet #'.$entry->id.' · '.$employee->name);
         });
         return redirect()->route($this->prefix().'.index', ['month'=>$timesheet->work_date->format('Y-m'),'employee_id'=>$timesheet->employee_id])->with('success', 'Entry deleted.');
