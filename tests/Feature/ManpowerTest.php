@@ -11,6 +11,7 @@ use App\Models\Designation;
 use App\Models\Employee;
 use App\Models\Timesheet;
 use App\Models\Payroll;
+use App\Models\Branch;
 use App\Services\Documents;
 use setasign\Fpdi\Fpdi;
 use setasign\Fpdi\PdfParser\StreamReader;
@@ -23,6 +24,7 @@ class ManpowerTest extends TestCase
     private $company;
     private $other;
     private $designation;
+    private $branch;
     public function actingAs(\Illuminate\Contracts\Auth\Authenticatable $user, $guard = null)
     {
         // Simulate a fresh sign-in when switching roles within one test client.
@@ -37,23 +39,26 @@ class ManpowerTest extends TestCase
         $this->manager = User::create(['name' => 'Test Manager', 'username' => 'manager', 'email' => 'manager@test.local', 'password' => Hash::make('A-secure-password'), 'role' => 'manager', 'is_active' => true]);
         $this->approver = User::create(['name' => 'Test Approver', 'username' => 'approver', 'email' => 'approver@test.local', 'password' => Hash::make('A-secure-password'), 'role' => 'admin', 'is_active' => true]);
         $this->company = Company::create(['name' => 'Assigned Alpha']);
+        $this->branch = Branch::create(['company_id'=>$this->company->id,'name'=>'Main','code'=>'MAIN','location'=>'Riyadh','is_active'=>true]);
         $second = Company::create(['name' => 'Assigned Beta']);
         $this->other = Company::create(['name' => 'Restricted Company']);
         $this->manager->companies()->attach([$this->company->id, $second->id]);
+        $this->manager->update(['company_id'=>$this->company->id,'branch_id'=>$this->branch->id]);
+        $this->approver->update(['company_id'=>$this->company->id]);
         $this->designation = Designation::create(['name' => 'Electrician']);
     }
     private function employee($overrides = [])
     {
         static $sequence = 1000000000; $sequence++;
-        return Employee::create(array_merge(['name' => 'Employee '.$sequence, 'photo_path' => 'employee-photos/test.png', 'iqama_number' => (string) $sequence, 'passport_number' => 'P'.$sequence, 'phone' => '+966 501234567', 'nationality' => 'Saudi Arabia', 'personal_email' => 'employee'.$sequence.'@test.local', 'professional_summary' => 'Experienced professional.', 'education' => 'Technical diploma.', 'skills' => 'Safety, teamwork', 'company_id' => $this->company->id, 'designation_id' => $this->designation->id, 'blood_group' => 'O+', 'previous_experience' => [['company_name' => 'Previous Employer', 'position' => 'Electrician', 'duration' => '5 years', 'responsibilities' => 'Electrical installation and maintenance.']], 'employment_type' => 'rental', 'salary_type' => 'hourly', 'hourly_rate_cents' => 1234, 'monthly_salary_cents' => 0, 'overtime_multiplier_units' => 150, 'joined_on' => now()->subYear()->format('Y-m-d'), 'status' => 'active', 'created_by' => $this->admin->id], $overrides));
+        return Employee::create(array_merge(['name' => 'Employee '.$sequence, 'photo_path' => 'employee-photos/test.png', 'iqama_number' => (string) $sequence, 'passport_number' => 'P'.$sequence, 'phone' => '+966 501234567', 'nationality' => 'Saudi Arabia', 'personal_email' => 'employee'.$sequence.'@test.local', 'professional_summary' => 'Experienced professional.', 'education' => 'Technical diploma.', 'skills' => 'Safety, teamwork', 'company_id' => $this->company->id, 'branch_id'=>$this->branch->id, 'designation_id' => $this->designation->id, 'blood_group' => 'O+', 'previous_experience' => [['company_name' => 'Previous Employer', 'position' => 'Electrician', 'duration' => '5 years', 'responsibilities' => 'Electrical installation and maintenance.']], 'employment_type' => 'rental', 'salary_type' => 'hourly', 'hourly_rate_cents' => 1234, 'monthly_salary_cents' => 0, 'overtime_multiplier_units' => 150, 'joined_on' => now()->subYear()->format('Y-m-d'), 'status' => 'active', 'created_by' => $this->admin->id], $overrides));
     }
     private function entry(Employee $employee, $overrides = [])
     {
-        return Timesheet::create(array_merge(['employee_id' => $employee->id, 'work_date' => now()->format('Y-m-d'), 'regular_units' => 850, 'overtime_units' => 125, 'hourly_rate_cents' => $employee->hourly_rate_cents, 'overtime_multiplier_units' => $employee->overtime_multiplier_units, 'status' => 'approved', 'created_by' => $this->manager->id], $overrides));
+        return Timesheet::create(array_merge(['employee_id' => $employee->id, 'company_id'=>$employee->company_id, 'branch_id'=>$employee->branch_id, 'work_date' => now()->format('Y-m-d'), 'regular_units' => 850, 'overtime_units' => 125, 'hourly_rate_cents' => $employee->hourly_rate_cents, 'overtime_multiplier_units' => $employee->overtime_multiplier_units, 'status' => 'approved', 'created_by' => $this->manager->id], $overrides));
     }
     private function payload($overrides = [])
     {
-        return array_merge(['name' => 'New Worker', 'photo' => UploadedFile::fake()->image('photo.jpg'), 'iqama_number' => '2123456789', 'passport_number' => 'AB123456', 'phone' => '+966501234567', 'nationality' => 'Saudi Arabia', 'personal_email' => 'new.worker@test.local', 'professional_summary' => 'Experienced and reliable worker.', 'education' => 'Technical diploma.', 'skills' => 'Safety, teamwork, communication', 'company_id' => $this->company->id, 'designation_id' => $this->designation->id, 'blood_group' => 'A+', 'previous_experience' => [['company_name' => 'Previous Employer', 'position' => 'Worker', 'duration' => '2 years', 'responsibilities' => 'Site operations and reporting.']], 'hourly_rate' => '20.00', 'overtime_rate' => '30.00', 'regular_hours' => '8.00', 'joined_on' => now()->subMonth()->format('Y-m-d'), 'status' => 'active'], $overrides);
+        return array_merge(['name' => 'New Worker', 'photo' => UploadedFile::fake()->image('photo.jpg'), 'iqama_number' => '2123456789', 'passport_number' => 'AB123456', 'phone' => '+966501234567', 'nationality' => 'Saudi Arabia', 'personal_email' => 'new.worker@test.local', 'professional_summary' => 'Experienced and reliable worker.', 'education' => 'Technical diploma.', 'skills' => 'Safety, teamwork, communication', 'company_id' => $this->company->id, 'branch_id'=>$this->branch->id, 'designation_id' => $this->designation->id, 'blood_group' => 'A+', 'previous_experience' => [['company_name' => 'Previous Employer', 'position' => 'Worker', 'duration' => '2 years', 'responsibilities' => 'Site operations and reporting.']], 'hourly_rate' => '20.00', 'overtime_rate' => '30.00', 'po_rate'=>'45.00', 'company_cost'=>'750.00', 'regular_hours' => '8.00', 'joined_on' => now()->subMonth()->format('Y-m-d'), 'status' => 'active'], $overrides);
     }
     private function generate(Employee $employee, $prefix = 'payrolls', $overrides = [])
     {
@@ -303,15 +308,33 @@ class ManpowerTest extends TestCase
         $employee = $this->employee(); $payload = ['employee_id' => $employee->id, 'work_date' => now()->format('Y-m-d'), 'regular_hours' => '8.50', 'overtime_hours' => '1.25'];
         $this->actingAs($this->manager)->post(route('timesheets.store'), array_merge($payload, ['regular_hours' => 24, 'overtime_hours' => 1]))->assertSessionHasErrors('regular_hours');
         $this->post(route('timesheets.store'), $payload)->assertSessionHasNoErrors();
-        $entry = Timesheet::firstOrFail(); $this->assertEquals('pending', $entry->status); $this->assertEquals(850, $entry->regular_units);
-        $this->get(route('timesheets.edit', $entry))->assertOk();
+        $entry = Timesheet::firstOrFail(); $this->assertEquals('pending', $entry->status); $this->assertEquals(800, $entry->regular_units); $this->assertEquals(175, $entry->overtime_units);
+        $this->get(route('timesheets.edit', $entry))->assertForbidden();
         $this->post(route('timesheets.store'), $payload)->assertStatus(302)->assertSessionHasErrors('work_date');
         $this->post(route('timesheets.review', $entry), ['status' => 'approved'])->assertForbidden();
         $this->actingAs($this->admin)->post(route('timesheets.review', $entry), ['status' => 'approved'])->assertSessionHasNoErrors();
         $this->assertEquals('approved', $entry->fresh()->status);
-        $this->actingAs($this->manager)->put(route('timesheets.update', $entry), $payload)->assertSessionHasErrors('work_date');
+        $this->actingAs($this->manager)->put(route('timesheets.update', $entry), $payload)->assertForbidden();
         $this->actingAs($this->admin)->post(route('timesheets.review', $entry), ['status' => 'pending', 'review_note' => 'Correct daily hours'])->assertSessionHasNoErrors();
         $this->assertEquals('pending', $entry->fresh()->status);
+    }
+    public function test_company_admin_can_correct_only_short_unlocked_hours()
+    {
+        $employee = $this->employee(['regular_hours_units'=>800]);
+        $short = $this->entry($employee, ['regular_units'=>600,'overtime_units'=>0,'status'=>'pending']);
+        $payload=['employee_id'=>$employee->id,'work_date'=>$short->work_date->format('Y-m-d'),'regular_hours'=>'7.50','overtime_hours'=>'0','notes'=>'Corrected actual hours'];
+        $this->actingAs($this->approver)->get(route('timesheets.edit',$short))->assertOk();
+        $this->put(route('timesheets.update',$short),$payload)->assertSessionHasNoErrors();
+        $this->assertSame(750,(int)$short->fresh()->regular_units);
+        $full = $this->entry($employee, ['work_date'=>now()->subDay(),'regular_units'=>800,'status'=>'pending']);
+        $this->get(route('timesheets.edit',$full))->assertForbidden();
+    }
+    public function test_zero_hours_can_be_recorded_as_an_absence()
+    {
+        $employee=$this->employee(['regular_hours_units'=>800]);
+        $payload=['employee_id'=>$employee->id,'work_date'=>now()->format('Y-m-d'),'regular_hours'=>'0','overtime_hours'=>'0','notes'=>'Absent'];
+        $this->actingAs($this->manager)->post(route('timesheets.store'),$payload)->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('timesheets',['employee_id'=>$employee->id,'regular_units'=>0,'overtime_units'=>0,'status'=>'pending']);
     }
     public function test_timesheet_scope_dates_and_employee_type_are_enforced()
     {
@@ -549,7 +572,7 @@ class ManpowerTest extends TestCase
             ->assertSee('Six-month operating trend')
             ->assertSee('Company performance')
             ->assertSee('Workforce composition')
-            ->assertSee('Invoice analytics')
+            ->assertSee('Combined monthly revenue')
             ->assertSee('1 timesheet entries')
             ->assertDontSee('Restricted Company');
     }

@@ -2,6 +2,7 @@
 namespace App\Http\Controllers;
 use App\Models\Employee;
 use App\Models\Designation;
+use App\Models\Branch;
 use App\Models\ActivityLog;
 use App\Services\Access;
 use App\Services\Pay;
@@ -17,24 +18,27 @@ class EmployeeController extends Controller
     private function check(Employee $employee) { Access::employee($employee); abort_unless($employee->employment_type === $this->workforce(), 404); }
     public function index(Request $request)
     {
-        $filters = $request->validate(['search' => 'nullable|string|max:100', 'company_id' => 'nullable|integer', 'status' => 'nullable|in:active,inactive']);
+        $filters = $request->validate(['search' => 'nullable|string|max:100', 'company_id' => 'nullable|integer', 'branch_id'=>'nullable|integer', 'status' => 'nullable|in:active,inactive']);
         $workforce = $this->workforce(); $routePrefix = $this->routePrefix();
-        $query = Access::employees()->where('employment_type', $workforce)->with(['company', 'designation']);
+        $query = Access::employees()->where('employment_type', $workforce)->with(['company', 'branch', 'designation']);
         if ($request->filled('search')) { $query->where(function ($q) use ($request) { foreach (['name', 'iqama_number', 'passport_number', 'phone'] as $field) { $q->orWhere($field, 'like', '%'.$request->search.'%'); } }); }
         if ($request->filled('company_id')) { $query->where('company_id', $request->company_id); }
+        if ($request->filled('branch_id')) { $query->where('branch_id', $request->branch_id); }
         if ($request->filled('status')) { $query->where('status', $request->status); }
         $employees = $query->latest()->paginate(12)->withQueryString();
         $companies = Access::companies()->orderBy('name')->get();
-        return view('employees.index', compact('employees', 'companies', 'workforce', 'routePrefix'));
+        $branches = Access::branches($request->company_id)->orderBy('name')->get();
+        return view('employees.index', compact('employees', 'companies', 'branches', 'workforce', 'routePrefix'));
     }
     public function create() { return $this->form(new Employee(['status' => 'active', 'salary_type' => $this->workforce() === 'own' ? 'monthly' : 'hourly', 'regular_hours_units' => 800, 'overtime_multiplier_units' => 100, 'joined_on' => now()])); }
     public function edit(Employee $employee) { $this->check($employee); return $this->form($employee); }
     private function form($employee)
     {
         $companies = Access::companies()->where(function ($q) use ($employee) { $q->where('is_active', true)->orWhere('companies.id', $employee->company_id ?? 0); })->orderBy('name')->get();
+        $branches = Access::branches($employee->company_id)->where(function ($q) use ($employee) { $q->where('is_active',true)->orWhere('id',$employee->branch_id ?? 0); })->orderBy('name')->get();
         $designations = Designation::where('is_active', true)->orWhere('id', $employee->designation_id ?? 0)->orderBy('name')->get();
         $workforce = $this->workforce(); $routePrefix = $this->routePrefix();
-        return view('employees.form', compact('employee', 'companies', 'designations', 'workforce', 'routePrefix'));
+        return view('employees.form', compact('employee', 'companies', 'branches', 'designations', 'workforce', 'routePrefix'));
     }
     public function store(Request $request) { return $this->save($request, new Employee); }
     public function update(Request $request, Employee $employee) { $this->check($employee); return $this->save($request, $employee); }
@@ -54,7 +58,7 @@ class EmployeeController extends Controller
             'professional_summary' => 'nullable|string|max:2000',
             'education' => 'nullable|string|max:2000',
             'skills' => 'nullable|string|max:2000',
-            'company_id' => 'required|exists:companies,id', 'designation_id' => 'required|exists:designations,id',
+            'company_id' => 'required|exists:companies,id', 'branch_id' => 'required|exists:branches,id', 'designation_id' => 'required|exists:designations,id',
             'directorate' => 'nullable|string|max:150',
             'department' => 'nullable|string|max:150',
             'previous_experience' => 'nullable|array|max:5',
@@ -68,6 +72,8 @@ class EmployeeController extends Controller
             'salary_type' => 'required|in:hourly,monthly',
             'hourly_rate' => [$this->workforce() === 'own' ? 'nullable' : 'required', 'numeric', 'min:0.01', 'max:99999.99', 'regex:/^\d+(\.\d{1,2})?$/'],
             'overtime_rate' => ['required', 'numeric', 'min:0.01', 'max:99999.99', 'regex:/^\d+(\.\d{1,2})?$/'],
+            'po_rate' => [$this->workforce() === 'own' ? 'nullable' : 'required', 'numeric', 'min:0.01', 'max:99999.99', 'regex:/^\d+(\.\d{1,2})?$/'],
+            'company_cost' => [$this->workforce() === 'own' ? 'nullable' : 'required', 'numeric', 'min:0', 'max:999999.99', 'regex:/^\d+(\.\d{1,2})?$/'],
             'regular_hours' => ['required', 'numeric', 'min:0.01', 'max:24', 'regex:/^\d+(\.\d{1,2})?$/'],
             'monthly_salary' => ['required_if:salary_type,monthly', 'nullable', 'numeric', 'min:0.01', 'max:999999.99', 'regex:/^\d+(\.\d{1,2})?$/'],
             'meal_allowance' => ['nullable', 'numeric', 'min:0', 'max:999999.99', 'regex:/^\d+(\.\d{1,2})?$/'],
@@ -79,16 +85,19 @@ class EmployeeController extends Controller
             'joined_on' => 'required|date_format:Y-m-d|before_or_equal:today', 'status' => 'required|in:active,inactive',
         ]);
         Access::company($data['company_id']);
+        $branch = Access::branch($data['branch_id'], $data['company_id']);
         if ($request->hasFile('document')) {
             try { Documents::validateAttachment($request->file('document')->getRealPath()); }
             catch (\Throwable $e) { return back()->withErrors(['document' => 'Upload an unencrypted PDF with 1 to 30 pages. If this PDF uses unsupported compression, print it to PDF and upload the new copy.'])->withInput($request->except('photo', 'document')); }
         }
         $company = \App\Models\Company::findOrFail($data['company_id']);
         $designation = Designation::findOrFail($data['designation_id']);
-        if ((!$company->is_active && $employee->company_id != $company->id) || (!$designation->is_active && $employee->designation_id != $designation->id)) { return back()->withErrors(['company_id' => 'Choose an active company and designation.'])->withInput(); }
+        if ((!$company->is_active && $employee->company_id != $company->id) || (!$branch->is_active && $employee->branch_id != $branch->id) || (!$designation->is_active && $employee->designation_id != $designation->id)) { return back()->withErrors(['company_id' => 'Choose an active company, branch, and designation.'])->withInput(); }
         $data['hourly_rate_cents'] = Pay::units($this->workforce() === 'own' ? $data['overtime_rate'] : $data['hourly_rate']);
         $data['regular_hours_units'] = Pay::units($data['regular_hours']);
         $data['overtime_rate_cents'] = Pay::units($data['overtime_rate']);
+        $data['po_rate_cents'] = $this->workforce() === 'rental' ? Pay::units($data['po_rate']) : 0;
+        $data['company_cost_cents'] = $this->workforce() === 'rental' ? Pay::units($data['company_cost']) : 0;
         $data['employment_type'] = $this->workforce();
         $data['monthly_salary_cents'] = $data['salary_type'] === 'monthly' ? Pay::units($data['monthly_salary']) : 0;
         foreach (['meal_allowance', 'transportation_allowance', 'housing_allowance', 'medical_allowance', 'retirement_insurance', 'tax'] as $component) {
@@ -98,7 +107,7 @@ class EmployeeController extends Controller
         $data['previous_experience'] = array_values(array_filter($data['previous_experience'] ?? [], function ($entry) {
             return collect($entry)->contains(function ($value) { return trim((string) $value) !== ''; });
         }));
-        unset($data['photo'], $data['document'], $data['remove_document'], $data['hourly_rate'], $data['overtime_rate'], $data['regular_hours'], $data['monthly_salary'], $data['meal_allowance'], $data['transportation_allowance'], $data['housing_allowance'], $data['medical_allowance'], $data['retirement_insurance'], $data['tax']);
+        unset($data['photo'], $data['document'], $data['remove_document'], $data['hourly_rate'], $data['overtime_rate'], $data['po_rate'], $data['company_cost'], $data['regular_hours'], $data['monthly_salary'], $data['meal_allowance'], $data['transportation_allowance'], $data['housing_allowance'], $data['medical_allowance'], $data['retirement_insurance'], $data['tax']);
         $oldPhoto = $employee->photo_path;
         $oldDocument = $employee->document_path;
         $newDocument = $request->hasFile('document') ? $request->file('document')->store('employee-documents', 'local') : null;
@@ -120,13 +129,15 @@ class EmployeeController extends Controller
     }
     public function show(Employee $employee)
     {
-        $this->check($employee); $employee->load(['company', 'designation']);
-        $timesheets = $employee->timesheets()->latest('work_date')->limit(10)->get();
+        $this->check($employee); $employee->load(['company', 'branch', 'designation']);
+        $timesheets = $employee->timesheets()->when(auth()->user()->isManager(),fn($q)=>$q->where('branch_id',auth()->user()->branch_id))->latest('work_date')->limit(10)->get();
         $salaryQuery = $employee->payrolls()->latest('month');
-        if (!auth()->user()->isAdmin()) { $salaryQuery->whereIn('company_id', auth()->user()->companies()->select('companies.id')); }
+        if(auth()->user()->isManager())$salaryQuery->where('branch_id',auth()->user()->branch_id);
         $payrolls = $salaryQuery->limit(6)->get();
+        $advances = $employee->advances()->with('repayments')->latest('advance_date')->get();
+        $advanceBalance = $advances->sum('balance_cents');
         $workforce = $this->workforce(); $routePrefix = $this->routePrefix();
-        return view('employees.show', compact('employee', 'timesheets', 'payrolls', 'workforce', 'routePrefix'));
+        return view('employees.show', compact('employee', 'timesheets', 'payrolls', 'advances', 'advanceBalance', 'workforce', 'routePrefix'));
     }
     public function photo(Employee $employee)
     {

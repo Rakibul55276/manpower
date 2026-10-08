@@ -8,4 +8,5 @@ class Payroll extends Model
     public function approver() { return $this->belongsTo(User::class, 'approved_by'); }
     public function employee() { return $this->belongsTo(Employee::class); }
     public function timesheets() { return $this->hasMany(Timesheet::class); }
+    public function advanceRepayments() { return $this->hasMany(EmployeeAdvanceRepayment::class); }
 }

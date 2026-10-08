@@ -5,6 +5,6 @@ use App\Modules\SafetyShop\Stock\Models\Stock;
 class Master extends Model
 {
     protected $table = 'safety_shop_masters';
-    protected $fillable = ['type','name','phone','email','address','is_active'];
+    protected $fillable = ['company_id','type','name','sku_prefix','contact_person','phone','email','vat_number','commercial_registration','website','address','is_active'];
     protected $casts = ['is_active'=>'boolean'];
 }

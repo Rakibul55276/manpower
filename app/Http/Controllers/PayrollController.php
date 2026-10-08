@@ -4,25 +4,27 @@ use App\Models\Employee;
 use App\Models\Payroll;
 use App\Models\Timesheet;
 use App\Models\ActivityLog;
+use App\Models\EmployeeAdvance;
+use App\Models\EmployeeAdvanceRepayment;
 use App\Services\Access;
 use App\Services\Pay;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Carbon\Carbon;
 class PayrollController extends Controller
 {
     private function workforce() { return request()->route('workforce') ?? 'rental'; }
     private function prefix() { return $this->workforce() === 'own' ? 'salaries' : 'payrolls'; }
-    private function check(Payroll $payroll) { Access::company($payroll->company_id); abort_unless($payroll->employment_type === $this->workforce(), 404); }
+    private function check(Payroll $payroll) { Access::company($payroll->company_id); Access::branch($payroll->branch_id, $payroll->company_id); abort_unless($payroll->employment_type === $this->workforce(), 404); }
+    private function scopedPayrolls() { $q=Payroll::query(); $u=auth()->user(); if(!$u->isSuperAdmin())$q->where('company_id',$u->company_id); if($u->isManager())$q->where('branch_id',$u->branch_id); return $q; }
     public function index(Request $request)
     {
         $request->validate(['month' => 'nullable|date_format:Y-m', 'status' => 'nullable|in:pending,approved,paid', 'company_id' => 'nullable|integer', 'search' => 'nullable|string|max:100']);
         $workforce = $this->workforce(); $routePrefix = $this->prefix();
-        $available = Payroll::where('employment_type', $workforce);
-        if (!$request->user()->isAdmin()) { $available->whereIn('company_id', $request->user()->companies()->select('companies.id')); }
+        $available = $this->scopedPayrolls()->where('employment_type', $workforce);
         $month = $request->month ?? $available->max('month') ?? now()->format('Y-m');
-        $query = Payroll::where('employment_type', $workforce)->where('month', $month);
-        if (!$request->user()->isAdmin()) { $query->whereIn('company_id', $request->user()->companies()->select('companies.id')); }
+        $query = $this->scopedPayrolls()->where('employment_type', $workforce)->where('month', $month);
         if ($request->filled('status')) { $query->where('status', $request->status); }
         if ($request->filled('company_id')) { $query->where('company_id', $request->company_id); }
         if ($request->filled('search')) {
@@ -35,6 +37,12 @@ class PayrollController extends Controller
             });
         }
         $total = (clone $query)->sum('net_pay_cents');
+        $financials = $workforce === 'rental' ? [
+            'po_revenue' => (int) (clone $query)->sum('po_revenue_cents'),
+            'employee_cost' => (int) (clone $query)->sum('employee_cost_cents'),
+            'company_cost' => (int) (clone $query)->sum('company_cost_cents'),
+            'margin' => (int) (clone $query)->sum('margin_cents'),
+        ] : null;
         $payrolls = $query->orderBy('employee_name')->paginate(20)->withQueryString();
         $employeeQuery = Access::employees()->where('employment_type', $workforce)->with(['company', 'designation'])->orderBy('name');
         if ($request->filled('company_id')) { $employeeQuery->where('company_id', (int) $request->company_id); }
@@ -43,8 +51,7 @@ class PayrollController extends Controller
             $employeeQuery->where(function ($match) use ($search) { $match->where('name', 'like', '%'.$search.'%')->orWhere('iqama_number', 'like', '%'.$search.'%')->orWhereHas('company', function ($company) use ($search) { $company->where('name', 'like', '%'.$search.'%'); })->orWhereHas('designation', function ($designation) use ($search) { $designation->where('name', 'like', '%'.$search.'%'); }); });
         }
         $directoryEmployees = $employeeQuery->paginate(25, ['*'], 'directory_page')->withQueryString();
-        $directoryPayrollQuery = Payroll::where('employment_type', $workforce)->where('month', $month);
-        if (!$request->user()->isAdmin()) { $directoryPayrollQuery->whereIn('company_id', $request->user()->companies()->select('companies.id')); }
+        $directoryPayrollQuery = $this->scopedPayrolls()->where('employment_type', $workforce)->where('month', $month);
         $directoryPayrolls = $directoryPayrollQuery->whereIn('employee_id', $directoryEmployees->pluck('id'))->get()->keyBy('employee_id');
         $pendingByEmployee = Timesheet::whereIn('employee_id', $directoryEmployees->pluck('id'))->where('work_date', 'like', $month.'%')->where('status', 'pending')->selectRaw('employee_id, COUNT(*) as pending_count')->groupBy('employee_id')->pluck('pending_count', 'employee_id');
         $payrollDirectory = $directoryEmployees->getCollection()->map(function ($employee) use ($directoryPayrolls, $pendingByEmployee) {
@@ -52,7 +59,7 @@ class PayrollController extends Controller
         })->values();
         $employees = Access::employees()->where('employment_type', $workforce)->where('status', 'active')->with('company')->when($request->filled('search'), function ($employeeQuery) use ($request) { $search = trim($request->search); $employeeQuery->where(function ($match) use ($search) { $match->where('name', 'like', '%'.$search.'%')->orWhere('iqama_number', 'like', '%'.$search.'%')->orWhereHas('company', function ($company) use ($search) { $company->where('name', 'like', '%'.$search.'%'); }); }); })->orderBy('name')->limit(50)->get();
         $companies = Access::companies()->orderBy('name')->get();
-        return view('payrolls.index', compact('month', 'workforce', 'routePrefix', 'payrolls', 'employees', 'companies', 'total', 'payrollDirectory', 'directoryEmployees'));
+        return view('payrolls.index', compact('month', 'workforce', 'routePrefix', 'payrolls', 'employees', 'companies', 'total', 'financials', 'payrollDirectory', 'directoryEmployees'));
     }
     public function store(Request $request)
     {
@@ -82,13 +89,27 @@ class PayrollController extends Controller
             $retirement = $employee->employment_type === 'own' ? $employee->retirement_insurance_cents : 0;
             $tax = $employee->employment_type === 'own' ? $employee->tax_cents : 0;
             $gross = $base + $overtime + $allowance + $meal + $transportation + $housing + $medical;
-            $totalDeductions = $deduction + $retirement + $tax;
+            $availableForAdvance = max(0, $gross - $deduction - $retirement - $tax);
+            $advanceAllocations = []; $advanceDeduction = 0;
+            $monthEnd = Carbon::createFromFormat('Y-m-d', $data['month'].'-01')->endOfMonth()->toDateString();
+            $advances = EmployeeAdvance::where('employee_id', $employee->id)->where('advance_date', '<=', $monthEnd)->withSum('repayments as repaid_cents', 'amount_cents')->oldest('advance_date')->oldest('id')->lockForUpdate()->get();
+            foreach ($advances as $advance) {
+                $balance = max(0, $advance->amount_cents - (int) $advance->repaid_cents);
+                $amount = min($balance, $advance->installment_cents, $availableForAdvance - $advanceDeduction);
+                if ($amount <= 0) break;
+                $advanceAllocations[] = [$advance->id, $amount]; $advanceDeduction += $amount;
+            }
+            $totalDeductions = $deduction + $retirement + $tax + $advanceDeduction;
+            $poRevenue=$employee->employment_type==='rental'?(int)round(($approved->sum('regular_units')+$approved->sum('overtime_units'))*$employee->po_rate_cents/100):0;
+            $employeeCost=$gross;$companyCost=$employee->employment_type==='rental'?$employee->company_cost_cents:0;
             if ($totalDeductions > $gross) { throw ValidationException::withMessages(['deduction' => 'Total deductions cannot exceed gross salary plus allowances.']); }
-            $payroll = Payroll::create(['employee_id' => $employee->id, 'company_id' => $employee->company_id, 'month' => $data['month'], 'employment_type' => $employee->employment_type, 'salary_type' => $employee->salary_type,
+            $payroll = Payroll::create(['employee_id' => $employee->id, 'company_id' => $employee->company_id, 'branch_id' => $employee->branch_id, 'month' => $data['month'], 'employment_type' => $employee->employment_type, 'salary_type' => $employee->salary_type,
                 'employee_name' => $employee->name, 'company_name' => $employee->company->name, 'designation_name' => $employee->designation->name, 'directorate' => $employee->directorate, 'department' => $employee->department, 'iqama_number' => $employee->iqama_number,
                 'regular_units' => $approved->sum('regular_units'), 'overtime_units' => $approved->sum('overtime_units'), 'regular_pay_cents' => $base, 'overtime_pay_cents' => $overtime,
+                'po_revenue_cents'=>$poRevenue,'employee_cost_cents'=>$employeeCost,'company_cost_cents'=>$companyCost,'margin_cents'=>$poRevenue-$employeeCost-$companyCost,
                 'allowance_cents' => $allowance, 'meal_allowance_cents' => $meal, 'transportation_allowance_cents' => $transportation, 'housing_allowance_cents' => $housing, 'medical_allowance_cents' => $medical,
-                'deduction_cents' => $deduction, 'retirement_insurance_cents' => $retirement, 'tax_cents' => $tax, 'net_pay_cents' => $gross - $totalDeductions, 'status' => 'pending', 'created_by' => auth()->id(), 'notes' => $data['notes'] ?? null]);
+                'deduction_cents' => $deduction, 'advance_deduction_cents' => $advanceDeduction, 'retirement_insurance_cents' => $retirement, 'tax_cents' => $tax, 'net_pay_cents' => $gross - $totalDeductions, 'status' => 'pending', 'created_by' => auth()->id(), 'notes' => $data['notes'] ?? null]);
+            foreach ($advanceAllocations as [$advanceId, $amount]) EmployeeAdvanceRepayment::create(['employee_advance_id'=>$advanceId,'payroll_id'=>$payroll->id,'amount_cents'=>$amount]);
             Timesheet::whereIn('id', $approved->pluck('id'))->update(['payroll_id' => $payroll->id]);
             ActivityLog::record('Generated salary', 'Payslip #'.$payroll->id.' · '.$employee->name.' · '.$data['month']);
             return $payroll;
@@ -110,9 +131,9 @@ class PayrollController extends Controller
             abort_unless($record->status === 'pending', 403, 'Only pending salaries can be adjusted.');
             $allowance = Pay::units($data['allowance']); $deduction = Pay::units($data['deduction']);
             $gross = $record->regular_pay_cents + $record->overtime_pay_cents + $allowance + $record->meal_allowance_cents + $record->transportation_allowance_cents + $record->housing_allowance_cents + $record->medical_allowance_cents;
-            $totalDeductions = $deduction + $record->retirement_insurance_cents + $record->tax_cents;
+            $totalDeductions = $deduction + $record->advance_deduction_cents + $record->retirement_insurance_cents + $record->tax_cents;
             if ($totalDeductions > $gross) { throw ValidationException::withMessages(['deduction' => 'Total deductions cannot exceed gross pay.']); }
-            $record->update(['allowance_cents' => $allowance, 'deduction_cents' => $deduction, 'net_pay_cents' => $gross - $totalDeductions, 'notes' => $data['notes'] ?? null]);
+            $record->update(['allowance_cents' => $allowance, 'deduction_cents' => $deduction, 'net_pay_cents' => $gross - $totalDeductions,'employee_cost_cents'=>$gross,'margin_cents'=>$record->po_revenue_cents-$gross-$record->company_cost_cents, 'notes' => $data['notes'] ?? null]);
             ActivityLog::record('Adjusted salary', 'Payslip #'.$record->id);
         });
         return back()->with('success', 'Salary adjustments saved.');
@@ -168,14 +189,13 @@ class PayrollController extends Controller
     public function export(Request $request)
     {
         $data = $request->validate(['month' => 'required|date_format:Y-m']);
-        $query = Payroll::where('month', $data['month'])->where('employment_type', $this->workforce());
-        if (!$request->user()->isAdmin()) { $query->whereIn('company_id', $request->user()->companies()->select('companies.id')); }
+        $query = $this->scopedPayrolls()->where('month', $data['month'])->where('employment_type', $this->workforce());
         $rows = $query->orderBy('employee_name')->get(); $workforce = $this->workforce();
         return response()->streamDownload(function () use ($rows) {
             $file = fopen('php://output', 'w');
-            fputcsv($file, ['Month', 'Employee', 'Company', 'Designation', 'Iqama', 'Salary type', 'Regular hours', 'Overtime hours', 'Base pay SAR', 'Overtime pay SAR', 'Allowance SAR', 'Deduction SAR', 'Net pay SAR', 'Status']);
+            fputcsv($file, ['Month', 'Employee', 'Company', 'Designation', 'Iqama', 'Salary type', 'Regular hours', 'Overtime hours', 'Base pay SAR', 'Overtime pay SAR', 'Allowance SAR', 'Other deduction SAR', 'Advance deduction SAR', 'Net pay SAR', 'Status']);
             foreach ($rows as $row) {
-                $cells = [$row->month, $row->employee_name, $row->company_name, $row->designation_name, $row->iqama_number, $row->salary_type, Pay::decimal($row->regular_units), Pay::decimal($row->overtime_units), Pay::decimal($row->regular_pay_cents), Pay::decimal($row->overtime_pay_cents), Pay::decimal($row->allowance_cents), Pay::decimal($row->deduction_cents), Pay::decimal($row->net_pay_cents), $row->status];
+                $cells = [$row->month, $row->employee_name, $row->company_name, $row->designation_name, $row->iqama_number, $row->salary_type, Pay::decimal($row->regular_units), Pay::decimal($row->overtime_units), Pay::decimal($row->regular_pay_cents), Pay::decimal($row->overtime_pay_cents), Pay::decimal($row->allowance_cents), Pay::decimal($row->deduction_cents), Pay::decimal($row->advance_deduction_cents), Pay::decimal($row->net_pay_cents), $row->status];
                 $cells = array_map(function ($cell) { return preg_match('/^[=+\-@\t\r\n]/', (string) $cell) ? "'".$cell : $cell; }, $cells);
                 fputcsv($file, $cells);
             }

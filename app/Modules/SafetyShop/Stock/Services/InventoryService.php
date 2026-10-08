@@ -14,13 +14,14 @@ class InventoryService
         return DB::transaction(function () use ($data, $userId) {
             // Serializing on the product also protects creation of new stock rows.
             $product = Product::whereKey($data['product_id'])->lockForUpdate()->firstOrFail();
+            if ((int)$product->company_id !== (int)$data['company_id']) $this->fail('product_id','Select a product belonging to this company.');
             if (!$product->is_active) $this->fail('product_id', 'This product is inactive.');
             if (Movement::where('request_key', $data['request_key'])->exists()) $this->fail('request_key', 'This movement was already posted. Refresh before entering another.');
-            $this->master($data['location_id'], 'location', 'location_id');
-            if (!empty($data['supplier_id'])) $this->master($data['supplier_id'], 'supplier', 'supplier_id');
+            $this->master($data['location_id'], 'location', 'location_id',$data['company_id']);
+            if (!empty($data['supplier_id'])) $this->master($data['supplier_id'], 'supplier', 'supplier_id',$data['company_id']);
             if ($data['type'] === 'transfer') {
                 if (empty($data['destination_id']) || $data['destination_id'] == $data['location_id']) $this->fail('destination_id', 'Choose a different destination.');
-                $this->master($data['destination_id'], 'location', 'destination_id');
+                $this->master($data['destination_id'], 'location', 'destination_id',$data['company_id']);
             } else { $data['destination_id'] = null; }
             $stock = Stock::firstOrCreate(['product_id'=>$product->id, 'location_id'=>$data['location_id']], ['quantity'=>0]);
             $stock = Stock::whereKey($stock->id)->lockForUpdate()->firstOrFail();
@@ -45,9 +46,9 @@ class InventoryService
             return $movement;
         }, 3);
     }
-    private function master($id, $type, $field)
+    private function master($id, $type, $field, $companyId)
     {
-        if (!Master::whereKey($id)->where('type', $type)->where('is_active', true)->lockForUpdate()->first()) $this->fail($field, 'Select an active '.$type.'.');
+        if (!Master::whereKey($id)->where('company_id',$companyId)->where('type', $type)->where('is_active', true)->lockForUpdate()->first()) $this->fail($field, 'Select an active '.$type.'.');
     }
     private function fail($field, $message) { throw ValidationException::withMessages([$field=>$message]); }
 }

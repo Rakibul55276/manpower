@@ -30,14 +30,14 @@ class AuditReportController extends Controller
         }
         if ($filters['report'] === 'timesheets') {
             $query = Timesheet::with(['employee.company', 'employee.designation', 'creator', 'reviewer'])->whereIn('employee_id', Access::employees()->select('id'))->whereBetween('work_date', [$filters['from'], $filters['to']]);
+            if(!auth()->user()->isSuperAdmin())$query->where('company_id',auth()->user()->company_id); if(auth()->user()->isManager())$query->where('branch_id',auth()->user()->branch_id);
             $this->relatedEmployeeFilters($query, $filters);
             if (!empty($filters['status'])) $query->where('status', $filters['status']);
             if (!empty($filters['search'])) $query->whereHas('employee', function ($q) use ($filters) { $q->where('name', 'like', '%'.$filters['search'].'%')->orWhere('iqama_number', 'like', '%'.$filters['search'].'%'); });
             return [$filters, $query];
         }
         if ($filters['report'] === 'salaries') {
-            $query = Payroll::with(['employee', 'approver'])->whereBetween('month', [substr($filters['from'], 0, 7), substr($filters['to'], 0, 7)]);
-            if (!auth()->user()->isAdmin()) $query->whereIn('company_id', auth()->user()->companies()->select('companies.id'));
+            $query = Payroll::with(['employee', 'approver'])->whereIn('employee_id',Access::employees()->select('id'))->whereBetween('month', [substr($filters['from'], 0, 7), substr($filters['to'], 0, 7)]);
             if (!empty($filters['employment_type'])) $query->where('employment_type', $filters['employment_type']);
             if (!empty($filters['company_id'])) $query->where('company_id', $filters['company_id']);
             if (!empty($filters['employee_id'])) $query->where('employee_id', $filters['employee_id']);
@@ -46,7 +46,7 @@ class AuditReportController extends Controller
             return [$filters, $query];
         }
         $query = ActivityLog::with('user')->whereBetween('created_at', [$filters['from'].' 00:00:00', $filters['to'].' 23:59:59']);
-        if (!auth()->user()->isAdmin()) $query->where('user_id', auth()->id());
+        if (!auth()->user()->isSuperAdmin()) $query->where('user_id', auth()->id());
         if (!empty($filters['user_id'])) $query->where('user_id', $filters['user_id']);
         if (!empty($filters['action'])) $query->where('action', $filters['action']);
         if (!empty($filters['search'])) $query->where('subject', 'like', '%'.$filters['search'].'%');
@@ -76,7 +76,7 @@ class AuditReportController extends Controller
         if ($type === 'timesheets') return [$r->work_date->format('Y-m-d').' ('.$r->work_date->format('D').')', optional($r->employee)->name, ucfirst(optional($r->employee)->employment_type), optional(optional($r->employee)->company)->name, number_format($r->regular_units / 100, 2), number_format($r->overtime_units / 100, 2), ucfirst($r->status), optional($r->reviewer)->name ?: '—'];
         if ($type === 'salaries') {
             $allowances = $r->allowance_cents + $r->meal_allowance_cents + $r->transportation_allowance_cents + $r->housing_allowance_cents + $r->medical_allowance_cents;
-            $deductions = $r->deduction_cents + $r->retirement_insurance_cents + $r->tax_cents;
+            $deductions = $r->deduction_cents + $r->advance_deduction_cents + $r->retirement_insurance_cents + $r->tax_cents;
             return [$r->month, $r->employee_name, ucfirst($r->employment_type), $r->company_name, number_format($r->regular_pay_cents / 100, 2), number_format($r->overtime_pay_cents / 100, 2), number_format($allowances / 100, 2), number_format($deductions / 100, 2), number_format($r->net_pay_cents / 100, 2), ucfirst($r->status)];
         }
         return [$r->created_at->format('Y-m-d H:i:s'), optional($r->user)->name ?: 'System', optional($r->user)->username ?: 'system', $r->action, $r->subject];
@@ -90,7 +90,7 @@ class AuditReportController extends Controller
             return ['Records' => number_format($count), 'Regular hours' => number_format($totals->regular / 100, 2), 'Overtime hours' => number_format($totals->overtime / 100, 2)];
         }
         if ($type === 'salaries') {
-            $totals = (clone $query)->selectRaw('COALESCE(SUM(regular_pay_cents),0) as regular, COALESCE(SUM(overtime_pay_cents),0) as overtime, COALESCE(SUM(allowance_cents + meal_allowance_cents + transportation_allowance_cents + housing_allowance_cents + medical_allowance_cents),0) as allowances, COALESCE(SUM(deduction_cents + retirement_insurance_cents + tax_cents),0) as deductions, COALESCE(SUM(net_pay_cents),0) as net')->first();
+            $totals = (clone $query)->selectRaw('COALESCE(SUM(regular_pay_cents),0) as regular, COALESCE(SUM(overtime_pay_cents),0) as overtime, COALESCE(SUM(allowance_cents + meal_allowance_cents + transportation_allowance_cents + housing_allowance_cents + medical_allowance_cents),0) as allowances, COALESCE(SUM(deduction_cents + advance_deduction_cents + retirement_insurance_cents + tax_cents),0) as deductions, COALESCE(SUM(net_pay_cents),0) as net')->first();
             return ['Salary records' => number_format($count), 'Regular pay · SAR' => number_format($totals->regular / 100, 2), 'Overtime pay · SAR' => number_format($totals->overtime / 100, 2), 'Allowances · SAR' => number_format($totals->allowances / 100, 2), 'Deductions · SAR' => number_format($totals->deductions / 100, 2), 'Net pay · SAR' => number_format($totals->net / 100, 2)];
         }
         return [$type === 'employees' ? 'Total employees' : 'Total activities' => number_format($count)];
@@ -100,7 +100,7 @@ class AuditReportController extends Controller
         $summary = $this->summary($query, $filters['report']);
         $records = $query->latest($this->orderColumn($filters['report']))->paginate(30)->withQueryString();
         $rows = $records->map(fn ($record) => $this->row($record, $filters['report']));
-        $users = auth()->user()->isAdmin() ? User::orderBy('name')->get() : User::where('id', auth()->id())->get(); $actions = ActivityLog::distinct()->orderBy('action')->pluck('action');
+        $users = auth()->user()->isSuperAdmin() ? User::orderBy('name')->get() : User::where('id', auth()->id())->get(); $actions = ActivityLog::distinct()->orderBy('action')->pluck('action');
         $companies = Access::companies()->orderBy('name')->get();
         $employees = !empty($filters['employee_id']) ? Access::employees()->where('id', $filters['employee_id'])->get() : collect();
         $headings = $this->headings($filters['report']); $reportTitle = $this->title($filters['report']);

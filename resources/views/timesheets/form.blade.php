@@ -15,7 +15,7 @@
 <input type="hidden" name="attendance_mode" value="1">
 <input type="hidden" name="regular_hours" value="8">
 @else
-<div class="field"><label for="regular_hours">Regular hours *</label><input id="regular_hours" name="regular_hours" type="number" min="0" max="24" step="0.01" required value="{{ old('regular_hours', \App\Services\Pay::decimal($timesheet->regular_units)) }}"></div>
+<div class="field"><label for="regular_hours">Hours worked *</label><input id="regular_hours" name="regular_hours" type="number" min="0" max="24" step="0.01" required value="{{ old('regular_hours', \App\Services\Pay::decimal($timesheet->regular_units)) }}"><p class="help">Enter 0 for an absence. Hours above the employee's regular daily target are moved automatically to overtime.</p></div>
 @endif
 <div class="field"><label for="overtime_hours">Overtime hours *</label><input id="overtime_hours" name="overtime_hours" type="number" min="0" max="24" step="0.01" required value="{{ old('overtime_hours', \App\Services\Pay::decimal($timesheet->overtime_units)) }}"></div>
 <div class="field full"><label for="notes">Work notes</label><textarea id="notes" name="notes" maxlength="1000">{{ old('notes', $timesheet->notes) }}</textarea></div>

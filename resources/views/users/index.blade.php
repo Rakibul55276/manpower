@@ -10,8 +10,8 @@
             @foreach($users as $account)
                 <tr>
                     <td><strong>{{ $account->name }}</strong><span class="sub">{{ $account->username }}</span></td>
-                    <td><span class="badge">{{ $account->isAdmin() ? 'Super Admin' : 'Manager' }}</span></td>
-                    <td class="wrap">{{ $account->isAdmin() ? 'All companies' : ($account->companies->pluck('name')->join(', ') ?: 'No companies assigned') }}</td>
+                    <td><span class="badge">{{ $account->isSuperAdmin() ? 'Super Admin' : ($account->isCompanyAdmin() ? 'Company Admin' : 'Branch Manager') }}</span></td>
+                    <td class="wrap">{{ $account->isSuperAdmin() ? 'All companies and branches' : (optional($account->company)->name ?: 'No company assigned') }}@if($account->branch)<span class="sub">{{ $account->branch->name }}</span>@endif</td>
                     <td><span class="badge {{ $account->is_active ? 'active' : 'inactive' }}">{{ $account->is_active ? 'Active' : 'Disabled' }}</span></td>
                     <td><a class="btn secondary small" href="{{ route('users.edit', $account) }}">Manage</a></td>
                 </tr>

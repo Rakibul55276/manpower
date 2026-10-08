@@ -64,7 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const fields = row.querySelectorAll('input'); const hours = units(fields[1].value) + units(fields[2].value);
             if (dates.has(fields[0].value)) error = 'Each date may appear only once.';
             dates.add(fields[0].value); total += hours;
-            if (hours <= 0 || hours > 2400) error = 'Each date must have more than zero and no more than 24 total hours.';
+            if (hours > 2400) error = 'Each date cannot exceed 24 total hours. Zero hours is allowed for an absence.';
         });
         if (target.value && units(target.value) !== total) error = 'Rows must match the total-hours target. Adjust the rows or clear the target.';
         if (error) { event.preventDefault(); notify(error); }

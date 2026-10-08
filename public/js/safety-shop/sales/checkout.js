@@ -6,10 +6,17 @@
     if (!form) return;
     const location = document.getElementById('checkout-location');
     const savedCustomer = document.getElementById('checkout-saved-customer');
+    const newCustomerToggle = document.getElementById('checkout-new-customer-toggle');
+    const newCustomerPanel = document.getElementById('checkout-new-customer');
+    const customerType = document.getElementById('checkout-customer-type');
     const customerName = document.getElementById('checkout-customer');
+    const customerContact = document.getElementById('checkout-customer-contact');
     const customerPhone = document.getElementById('checkout-customer-phone');
     const customerEmail = document.getElementById('checkout-customer-email');
     const customerAddress = document.getElementById('checkout-customer-address');
+    const customerVat = document.getElementById('checkout-customer-vat');
+    const customerCr = document.getElementById('checkout-customer-cr');
+    const customerCountry = document.getElementById('checkout-customer-country');
     const barcode = document.getElementById('checkout-barcode');
     const body = document.getElementById('checkout-lines');
     const discount = document.getElementById('checkout-discount');
@@ -26,10 +33,28 @@
     let posting = false;
     const paymentEntries = [];
     const paymentLabels = {cash: 'Cash', card: 'Card', bank: 'Bank transfer'};
+    const syncCustomerType = () => {
+        const company = customerType.value === 'company';
+        document.querySelectorAll('.checkout-company-field').forEach(field => field.hidden = !company);
+        document.querySelectorAll('[data-checkout-company-label]').forEach(label => label.hidden = !company);
+        document.querySelectorAll('[data-checkout-retail-label]').forEach(label => label.hidden = company);
+        customerName.required = false; customerContact.required = false; customerVat.required = false;
+        if (customerCountry) customerCountry.required = false;
+        if (!company) { customerContact.value = ''; customerVat.value = ''; customerCr.value = ''; }
+    };
+    const showNewCustomer = show => {
+        newCustomerPanel.hidden = !show; newCustomerToggle.setAttribute('aria-expanded', show ? 'true' : 'false');
+        newCustomerToggle.textContent = show ? '− Remove retail customer details' : '+ Quick add retail customer';
+        customerName.required = false;
+        if (show) { savedCustomer.value = ''; customerType.value = 'retail'; customerContact.value = ''; customerEmail.value = ''; customerAddress.value = ''; customerVat.value = ''; customerCr.value = ''; customerName.focus(); }
+        else if (!savedCustomer.value) { customerName.value = ''; customerPhone.value = ''; }
+    };
+    customerType.addEventListener('change', syncCustomerType);
+    newCustomerToggle.addEventListener('click', () => showNewCustomer(newCustomerPanel.hidden));
     if (savedCustomer) savedCustomer.addEventListener('change', () => {
         const option = savedCustomer.selectedOptions[0];
-        if (!option || !option.value) { customerName.value = 'Walk-in customer'; customerPhone.value = ''; customerEmail.value = ''; customerAddress.value = ''; customerName.focus(); customerName.select(); return; }
-        customerName.value = option.dataset.name || ''; customerPhone.value = option.dataset.phone || ''; customerEmail.value = option.dataset.email || ''; customerAddress.value = option.dataset.address || '';
+        if (!option || !option.value) { customerType.value = 'retail'; customerName.value = ''; customerContact.value = ''; customerPhone.value = ''; customerEmail.value = ''; customerVat.value = ''; customerCr.value = ''; customerAddress.value = ''; syncCustomerType(); return; }
+        showNewCustomer(false); customerType.value = option.dataset.type || 'retail'; customerName.value = option.dataset.name || ''; customerContact.value = option.dataset.contact || ''; customerPhone.value = option.dataset.phone || ''; customerEmail.value = option.dataset.email || ''; customerVat.value = option.dataset.vat || ''; customerCr.value = option.dataset.cr || ''; customerAddress.value = option.dataset.address || ''; syncCustomerType();
     });
     const money = cents => (cents / 100).toFixed(2);
     const subtotal = () => Array.from(cart.values()).reduce((sum, item) => sum + item.quantity * item.price_cents, 0);
@@ -176,5 +201,5 @@
     const saved = {cash: Number(paymentRows.dataset.cash || 0), card: Number(paymentRows.dataset.card || 0), bank: Number(paymentRows.dataset.bank || 0)};
     const savedMethods = Object.keys(saved).filter(name => saved[name] > 0);
     (savedMethods.length ? savedMethods : ['cash']).forEach(name => { addPaymentRow(name); paymentEntries[paymentEntries.length - 1].amount.value = saved[name] ? saved[name].toFixed(2) : '0.00'; });
-    render();
+    syncCustomerType(); if (customerName.value && !savedCustomer.value) showNewCustomer(true); render();
 })();

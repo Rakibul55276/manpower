@@ -21,6 +21,7 @@ class ReturnService
             }
 
             $sale = Sale::whereKey($data['sale_id'])->lockForUpdate()->firstOrFail();
+            $companyId=(int)$sale->location()->value('company_id');
             $requested = collect($data['lines'])->filter(fn ($line) => (int)($line['quantity'] ?? 0) > 0)->keyBy('sale_line_id');
             if ($requested->isEmpty()) $this->fail('lines', 'Select at least one item and enter its return quantity.');
 
@@ -68,7 +69,7 @@ class ReturnService
             foreach ($lineData as $item) {
                 $return->lines()->create(['sale_line_id'=>$item['line']->id, 'product_id'=>$item['line']->product_id, 'quantity'=>$item['quantity'], 'cost_cents'=>$item['cost_cents'], 'refund_cents'=>$item['refund_cents']]);
                 (new InventoryService)->post([
-                    'request_key'=>(string)Str::uuid(), 'type'=>'return', 'product_id'=>$item['line']->product_id,
+                    'company_id'=>$companyId, 'request_key'=>(string)Str::uuid(), 'type'=>'return', 'product_id'=>$item['line']->product_id,
                     'location_id'=>$sale->location_id, 'quantity'=>$item['quantity'], 'movement_date'=>now()->format('Y-m-d'),
                     'reference'=>'RETURN-'.$return->id.' / SALE-'.$sale->id, 'recipient'=>$sale->customer,
                     'notes'=>'Customer return #'.$return->id.' · '.$data['reason'],

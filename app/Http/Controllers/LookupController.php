@@ -10,13 +10,13 @@ class LookupController extends Controller
 {
     private function type() { return request()->route('lookup'); }
     private function model() { return $this->type() === 'companies' ? new Company : new Designation; }
-    private function writable() { abort_unless($this->type() !== 'companies' || auth()->user()->isAdmin(), 403); }
+    private function writable() { abort_unless(auth()->user()->isSuperAdmin(), 403); }
     public function index()
     {
         $type = $this->type();
         $query = $type === 'companies' ? Access::companies() : Designation::query();
         $items = $query->withCount('employees')->orderBy('name')->paginate(15);
-        $canManage = $type === 'designations' || auth()->user()->isAdmin();
+        $canManage = auth()->user()->isSuperAdmin();
         return view('lookups.index', compact('type', 'items', 'canManage'));
     }
     public function create()
@@ -48,7 +48,7 @@ class LookupController extends Controller
     public function destroy($id)
     {
         $this->writable(); $item = $this->model()->findOrFail($id);
-        if ($item->employees()->exists()) { return back()->withErrors(['name' => 'This item has employees. Deactivate it instead.']); }
+        if ($item->employees()->exists() || ($this->type()==='companies' && ($item->branches()->exists() || $item->users()->exists()))) { return back()->withErrors(['name' => 'This item has employees, branches, or users. Deactivate it instead.']); }
         $name = $item->name; $item->delete(); ActivityLog::record('Deleted '.$this->type(), $name);
         return back()->with('success', 'Deleted successfully.');
     }

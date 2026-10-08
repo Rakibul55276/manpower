@@ -15,7 +15,10 @@ class AuthController extends Controller
         }
         $request->session()->regenerate();
         ActivityLog::record('Signed in', $request->user()->name);
-        return redirect()->intended(route('dashboard'));
+        $destination=config('safety_shop.enabled') && $request->user()->isSuperAdmin()
+            ? route('safety-shop.index')
+            : route('dashboard');
+        return redirect()->intended($destination);
     }
     public function logout(Request $request)
     {

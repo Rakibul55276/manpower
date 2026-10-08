@@ -1,0 +1,7 @@
+.searchable-list-wrap { position: relative; }
+.searchable-list-wrap input { padding-right: 42px; }
+.searchable-list-toggle { position: absolute; right: 1px; top: 1px; bottom: 1px; width: 38px; border: 0; border-left: 1px solid var(--line); border-radius: 0 6px 6px 0; background: #f8fbf9; color: var(--muted); font-size: 18px; }
+.searchable-list-menu { position: absolute; z-index: 50; top: calc(100% + 4px); left: 0; right: 0; max-height: 240px; overflow: auto; background: white; border: 1px solid var(--line); border-radius: 7px; box-shadow: 0 10px 28px #102d3226; }
+.searchable-list-option, .searchable-list-empty { display: block; width: 100%; padding: 10px 12px; border: 0; border-bottom: 1px solid #edf1ee; background: white; text-align: left; color: var(--ink); font-size: 12px; }
+.searchable-list-option:hover, .searchable-list-option:focus { background: #eaf5ef; color: var(--teal); }
+.searchable-list-empty { color: var(--muted); }

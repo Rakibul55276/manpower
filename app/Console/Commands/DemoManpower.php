@@ -6,6 +6,7 @@ use App\Models\Employee;
 use App\Models\Timesheet;
 use App\Models\Payroll;
 use App\Models\User;
+use App\Models\Branch;
 use App\Services\Pay;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -20,15 +21,16 @@ class DemoManpower extends Command
         $manager = User::where('username', 'manager')->firstOrFail();
         $companyLocations = ['Gulf Construction' => 'Dammam, Saudi Arabia', 'Riyadh Facilities' => 'Riyadh, Saudi Arabia', 'Eastern Engineering' => 'Al Khobar, Saudi Arabia', 'Jeddah Logistics' => 'Jeddah, Saudi Arabia', 'Desert Industrial' => 'Jubail, Saudi Arabia'];
         $companies = collect($companyLocations)->map(function ($location, $name) { return Company::firstOrCreate(['name' => $name], ['location' => $location]); })->values();
+        $branches = $companies->mapWithKeys(function($company){return [$company->id=>Branch::firstOrCreate(['company_id'=>$company->id,'code'=>'MAIN'],['name'=>'Main Branch','location'=>$company->location,'is_active'=>true])];});
         $designations = collect(['General Worker', 'Electrician', 'Plumber', 'Welder', 'Driver', 'Supervisor', 'Accountant'])->map(function ($name) { return Designation::firstOrCreate(['name' => $name]); });
-        $manager->companies()->syncWithoutDetaching($companies->take(3)->pluck('id')->all());
+        $manager->update(['company_id'=>$companies->first()->id,'branch_id'=>$branches[$companies->first()->id]->id]);
         $firstNames = ['Ahmed', 'Mohammed', 'Abdul', 'Omar', 'Hassan', 'Imran', 'Rakib', 'Karim', 'Yusuf', 'Ali', 'Bilal', 'Naeem', 'Rafiq', 'Sajid', 'Faisal', 'Salman', 'Ibrahim', 'Khalid', 'Farhan', 'Tariq'];
         $lastNames = ['Khan', 'Rahman', 'Hossain', 'Ahmed', 'Islam'];
         $bloodGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
         $month = now()->subMonthNoOverflow()->format('Y-m');
         $start = now()->subMonthNoOverflow()->startOfMonth(); $end = $start->copy()->endOfMonth();
         $created = 0;
-        DB::transaction(function () use ($admin, $manager, $companies, $designations, $firstNames, $lastNames, $bloodGroups, $month, $start, $end, &$created) {
+        DB::transaction(function () use ($admin, $manager, $companies, $branches, $designations, $firstNames, $lastNames, $bloodGroups, $month, $start, $end, &$created) {
             for ($index = 1; $index <= 100; $index++) {
                 $name = $firstNames[($index - 1) % 20].' '.$lastNames[intdiv($index - 1, 20)];
                 $own = $index > 80; $rate = (1500 + (($index % 7) * 350));
@@ -45,7 +47,7 @@ class DemoManpower extends Command
                 }
                 $employee = Employee::firstOrCreate(['iqama_number' => (string) (2900000000 + $index)], [
                     'name' => ''.$name, 'photo_path' => $photoPath, 'document_path' => $documentPath, 'passport_number' => 'DEMO'.str_pad($index, 6, '0', STR_PAD_LEFT),
-                    'phone' => '+966500'.str_pad($index, 6, '0', STR_PAD_LEFT), 'company_id' => $companies[($index - 1) % 5]->id, 'designation_id' => $designations[($index - 1) % 7]->id,
+                    'phone' => '+966500'.str_pad($index, 6, '0', STR_PAD_LEFT), 'company_id' => $companies[($index - 1) % 5]->id, 'branch_id'=>$branches[$companies[($index - 1) % 5]->id]->id, 'designation_id' => $designations[($index - 1) % 7]->id,
                     'blood_group' => $bloodGroups[($index - 1) % 8], 'employment_type' => $own ? 'own' : 'rental', 'salary_type' => $own ? 'monthly' : 'hourly', 'hourly_rate_cents' => $rate,
                     'monthly_salary_cents' => $own ? 350000 + (($index % 8) * 50000) : 0, 'overtime_rate_cents' => (int) round($rate * 1.5), 'overtime_multiplier_units' => 100,
                     'nationality' => 'Saudi Arabia', 'personal_email' => 'employee'.$index.'@example.test',
@@ -60,7 +62,7 @@ class DemoManpower extends Command
                 for ($day = $start->copy(); $day->lte($end); $day->addDay()) {
                     if (in_array($day->dayOfWeek, [5, 6])) { continue; }
                     Timesheet::firstOrCreate(['employee_id' => $employee->id, 'work_date' => $day->format('Y-m-d')], [
-                        'regular_units' => 800, 'overtime_units' => ($index + $day->day) % 4 === 0 ? 200 : 0, 'hourly_rate_cents' => $rate, 'overtime_rate_cents' => (int) round($rate * 1.5), 'overtime_multiplier_units' => 100,
+                        'company_id'=>$employee->company_id, 'branch_id'=>$employee->branch_id, 'regular_units' => 800, 'overtime_units' => ($index + $day->day) % 4 === 0 ? 200 : 0, 'hourly_rate_cents' => $rate, 'overtime_rate_cents' => (int) round($rate * 1.5), 'overtime_multiplier_units' => 100,
                         'status' => 'approved', 'notes' => 'Daily shift completed.', 'created_by' => $creatorId, 'reviewed_by' => $admin->id, 'reviewed_at' => now(),
                     ]);
                 }
@@ -69,7 +71,7 @@ class DemoManpower extends Command
                 $overtime = $approved->sum(function ($entry) { return $entry->overtimePay(); });
                 $allowance = $index % 3 === 0 ? 15000 : 0; $deduction = $index % 4 === 0 ? 5000 : 0;
                 $paid = $index % 10 < 7;
-                $payroll = Payroll::create(['employee_id' => $employee->id, 'company_id' => $employee->company_id, 'month' => $month, 'employment_type' => $employee->employment_type, 'salary_type' => $employee->salary_type,
+                $payroll = Payroll::create(['employee_id' => $employee->id, 'company_id' => $employee->company_id, 'branch_id'=>$employee->branch_id, 'month' => $month, 'employment_type' => $employee->employment_type, 'salary_type' => $employee->salary_type,
                     'employee_name' => $employee->name, 'company_name' => $employee->company->name, 'designation_name' => $employee->designation->name, 'iqama_number' => $employee->iqama_number,
                     'regular_units' => $approved->sum('regular_units'), 'overtime_units' => $approved->sum('overtime_units'), 'regular_pay_cents' => $base, 'overtime_pay_cents' => $overtime,
                     'allowance_cents' => $allowance, 'deduction_cents' => $deduction, 'net_pay_cents' => $base + $overtime + $allowance - $deduction,
@@ -82,13 +84,13 @@ class DemoManpower extends Command
             foreach ($demoEmployees as $employee) {
                 if ($employee->payrolls()->where('month', $date->format('Y-m'))->exists()) { continue; }
                 Timesheet::firstOrCreate(['employee_id' => $employee->id, 'work_date' => $date->format('Y-m-d')], [
-                    'regular_units' => 800, 'overtime_units' => $employee->id % 4 === 0 ? 100 : 0, 'hourly_rate_cents' => $employee->hourly_rate_cents, 'overtime_rate_cents' => $employee->overtime_rate_cents, 'overtime_multiplier_units' => 100,
+                    'company_id'=>$employee->company_id, 'branch_id'=>$employee->branch_id, 'regular_units' => 800, 'overtime_units' => $employee->id % 4 === 0 ? 100 : 0, 'hourly_rate_cents' => $employee->hourly_rate_cents, 'overtime_rate_cents' => $employee->overtime_rate_cents, 'overtime_multiplier_units' => 100,
                     'status' => 'pending', 'notes' => 'Sample current-month shift awaiting review.', 'created_by' => $manager->canAccessCompany($employee->company_id) ? $manager->id : $admin->id,
                 ]);
             }
         });
         $this->info($created.' demo employees added. Demo workforce: 80 rental and 20 own employees.');
-        $this->info('Salary history is available for '.$month.'. The initial Manager has three demo companies in addition to the original assignment.');
+        $this->info('Salary history is available for '.$month.'. The initial Manager is assigned to one branch.');
         return 0;
     }
     private function avatar($name, $index, $path)

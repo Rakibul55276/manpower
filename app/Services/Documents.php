@@ -76,8 +76,11 @@ class Documents
     public static function brandingLogo($brand = null)
     {
         $brand = $brand ?: static::branding();
-        if (!$brand || !$brand->logo_path || !Storage::disk('local')->exists($brand->logo_path)) return null;
-        $path=Storage::disk('local')->path($brand->logo_path);
+        if (!$brand || !$brand->logo_path) return null;
+        if (str_starts_with($brand->logo_path,'public:')) $path=public_path(substr($brand->logo_path,7));
+        elseif (Storage::disk('local')->exists($brand->logo_path)) $path=Storage::disk('local')->path($brand->logo_path);
+        else return null;
+        if (!is_file($path)) return null;
         return 'data:'.mime_content_type($path).';base64,'.base64_encode(file_get_contents($path));
     }
     public static function download($bytes, $filename)

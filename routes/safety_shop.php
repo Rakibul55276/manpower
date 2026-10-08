@@ -1,9 +1,10 @@
 <?php
 use Illuminate\Support\Facades\Route;
-use App\Modules\SafetyShop\Products\Http\Controllers\ProductController;
+use App\Modules\SafetyShop\Home\Http\Controllers\SafetyShopController;
 Route::middleware(['auth','active','auth.session',\App\Http\Middleware\EnsureSafetyShopEnabled::class])->prefix('safety-shop')->name('safety-shop.')->group(function () {
-    Route::get('/',[ProductController::class,'index'])->name('index');
-    foreach (['Products','Categories','Suppliers','Locations','Customers','Stock','Sales','Reports'] as $feature) {
-        require app_path('Modules/SafetyShop/'.$feature.'/routes.php');
-    }
+    Route::middleware('approver')->group(function(){require app_path('Modules/SafetyShop/Stock/routes.php');});
+    Route::middleware('super_admin')->group(function () {
+        Route::get('/',[SafetyShopController::class,'index'])->name('index');
+        foreach (['Products','Categories','ProductMasters','Suppliers','Locations','Customers','Sales','Reports'] as $feature) require app_path('Modules/SafetyShop/'.$feature.'/routes.php');
+    });
 });

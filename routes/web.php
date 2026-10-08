@@ -23,6 +23,7 @@ Route::middleware(['auth', 'active', 'auth.session'])->group(function () {
     Route::get('/profile', [\App\Http\Controllers\AuthController::class, 'profile'])->name('profile');
     Route::put('/profile/password', [\App\Http\Controllers\AuthController::class, 'password'])->name('profile.password');
     Route::get('/employee-photos/{employee}', [\App\Http\Controllers\EmployeeController::class, 'photo'])->name('employees.photo');
+    Route::post('/employees/{employee}/advances', [\App\Http\Controllers\EmployeeAdvanceController::class, 'store'])->name('employees.advances.store');
     foreach (['rental' => 'employees', 'own' => 'own-employees'] as $workforce => $prefix) {
         $controller = \App\Http\Controllers\EmployeeController::class;
         Route::get('/'.$prefix, [$controller, 'index'])->defaults('workforce', $workforce)->name($prefix.'.index');
@@ -54,8 +55,8 @@ Route::middleware(['auth', 'active', 'auth.session'])->group(function () {
         Route::post('/'.$prefix.'/employee/{employee}/timesheet-pdf', [$controller, 'employeePdf'])->defaults('workforce', $workforce)->name($prefix.'.employee.pdf');
         Route::get('/'.$prefix.'/create', [$controller, 'create'])->defaults('workforce', $workforce)->name($prefix.'.create');
         Route::post('/'.$prefix, [$controller, 'store'])->defaults('workforce', $workforce)->name($prefix.'.store');
-        Route::get('/'.$prefix.'/{timesheet}/edit', [$controller, 'edit'])->defaults('workforce', $workforce)->name($prefix.'.edit');
-        Route::put('/'.$prefix.'/{timesheet}', [$controller, 'update'])->defaults('workforce', $workforce)->name($prefix.'.update');
+        Route::get('/'.$prefix.'/{timesheet}/edit', [$controller, 'edit'])->middleware('approver')->defaults('workforce', $workforce)->name($prefix.'.edit');
+        Route::put('/'.$prefix.'/{timesheet}', [$controller, 'update'])->middleware('approver')->defaults('workforce', $workforce)->name($prefix.'.update');
         Route::delete('/'.$prefix.'/{timesheet}', [$controller, 'destroy'])->middleware('super_admin')->defaults('workforce', $workforce)->name($prefix.'.destroy');
         Route::post('/'.$prefix.'/{timesheet}/review', [$controller, 'review'])->middleware('approver')->defaults('workforce', $workforce)->name($prefix.'.review');
     }
@@ -79,10 +80,11 @@ Route::middleware(['auth', 'active', 'auth.session'])->group(function () {
     });
     Route::middleware('super_admin')->group(function () {
         Route::resource('users', \App\Http\Controllers\UserController::class)->except(['show', 'destroy']);
+        Route::resource('companies.branches', \App\Http\Controllers\BranchController::class)->except(['show']);
         Route::get('/document-branding', [\App\Modules\SafetyShop\Shared\Http\Controllers\ReceiptSettingController::class, 'edit'])->name('document-branding.edit');
         Route::put('/document-branding', [\App\Modules\SafetyShop\Shared\Http\Controllers\ReceiptSettingController::class, 'update'])->name('document-branding.update');
     });
-    Route::prefix('invoicing')->name('invoicing.')->middleware(\App\Http\Middleware\EnsureInvoicingEnabled::class)->group(function () {
+    Route::prefix('invoicing')->name('invoicing.')->middleware(['super_admin', \App\Http\Middleware\EnsureInvoicingEnabled::class])->group(function () {
         $controller = \App\Modules\Invoicing\Http\Controllers\InvoiceController::class;
         Route::get('/', [$controller, 'index'])->name('index');
         Route::get('/create', [$controller, 'create'])->name('create');
@@ -105,7 +107,7 @@ Route::middleware(['auth', 'active', 'auth.session'])->group(function () {
         Route::post('/{invoice}/paid', [$controller, 'paid'])->middleware('approver')->name('paid');
         Route::delete('/{invoice}', [$controller, 'destroy'])->middleware('super_admin')->name('destroy');
     });
-    Route::get('/zatca', [\App\Modules\Zatca\Http\Controllers\ZatcaController::class, 'index'])->middleware(\App\Http\Middleware\EnsureZatcaEnabled::class)->name('zatca.index');
+    Route::get('/zatca', [\App\Modules\Zatca\Http\Controllers\ZatcaController::class, 'index'])->middleware(['super_admin', \App\Http\Middleware\EnsureZatcaEnabled::class])->name('zatca.index');
 });
 
 require __DIR__.'/safety_shop.php';

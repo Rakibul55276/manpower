@@ -10,7 +10,7 @@
 <div class="field"><label for="location_id">Location</label><select id="location_id" name="location_id"><option value="">All locations</option>@foreach($locations as $location)<option value="{{ $location->id }}" {{ request('location_id')==$location->id?'selected':'' }}>{{ $location->name }}</option>@endforeach</select></div>
 <div class="field"><label for="from">From</label><input id="from" type="date" name="from" value="{{ request('from') }}"></div><div class="field"><label for="to">To</label><input id="to" type="date" name="to" value="{{ request('to') }}"></div>
 <button class="btn secondary">Filter</button><a class="btn link" href="{{ route('safety-shop.stock.index') }}">Clear</a></form>
-<div class="card-head"><h2>Movements</h2><a class="btn secondary" href="{{ route('safety-shop.export',array_merge(request()->query(),['report'=>'movements'])) }}">Export ledger CSV</a></div>
+<div class="card-head"><h2>Movements</h2>@if(auth()->user()->isSuperAdmin())<a class="btn secondary" href="{{ route('safety-shop.export',array_merge(request()->query(),['report'=>'movements'])) }}">Export ledger CSV</a>@endif</div>
 @include('safety-shop.stock.ledger')
 </div>
 @endsection
