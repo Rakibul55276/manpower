@@ -36,7 +36,7 @@ class EmployeeController extends Controller
     {
         $companies = Access::companies()->where(function ($q) use ($employee) { $q->where('is_active', true)->orWhere('companies.id', $employee->company_id ?? 0); })->orderBy('name')->get();
         $branches = Access::branches($employee->company_id)->where(function ($q) use ($employee) { $q->where('is_active',true)->orWhere('id',$employee->branch_id ?? 0); })->orderBy('name')->get();
-        $designations = Designation::where('is_active', true)->orWhere('id', $employee->designation_id ?? 0)->orderBy('name')->get();
+        $designations = Designation::where('company_id',auth()->user()->company_id)->where(function($query) use ($employee){$query->where('is_active',true)->orWhere('id',$employee->designation_id ?? 0);})->orderBy('name')->get();
         $workforce = $this->workforce(); $routePrefix = $this->routePrefix();
         return view('employees.form', compact('employee', 'companies', 'branches', 'designations', 'workforce', 'routePrefix'));
     }
@@ -91,7 +91,7 @@ class EmployeeController extends Controller
             catch (\Throwable $e) { return back()->withErrors(['document' => 'Upload an unencrypted PDF with 1 to 30 pages. If this PDF uses unsupported compression, print it to PDF and upload the new copy.'])->withInput($request->except('photo', 'document')); }
         }
         $company = \App\Models\Company::findOrFail($data['company_id']);
-        $designation = Designation::findOrFail($data['designation_id']);
+        $designation = Designation::where('company_id',$company->id)->findOrFail($data['designation_id']);
         if ((!$company->is_active && $employee->company_id != $company->id) || (!$branch->is_active && $employee->branch_id != $branch->id) || (!$designation->is_active && $employee->designation_id != $designation->id)) { return back()->withErrors(['company_id' => 'Choose an active company, branch, and designation.'])->withInput(); }
         $data['hourly_rate_cents'] = Pay::units($this->workforce() === 'own' ? $data['overtime_rate'] : $data['hourly_rate']);
         $data['regular_hours_units'] = Pay::units($data['regular_hours']);
@@ -130,9 +130,9 @@ class EmployeeController extends Controller
     public function show(Employee $employee)
     {
         $this->check($employee); $employee->load(['company', 'branch', 'designation']);
-        $timesheets = $employee->timesheets()->when(auth()->user()->isManager(),fn($q)=>$q->where('branch_id',auth()->user()->branch_id))->latest('work_date')->limit(10)->get();
+        $timesheets = $employee->timesheets()->when(auth()->user()->isBranchUser(),fn($q)=>$q->where('branch_id',auth()->user()->branch_id))->latest('work_date')->limit(10)->get();
         $salaryQuery = $employee->payrolls()->latest('month');
-        if(auth()->user()->isManager())$salaryQuery->where('branch_id',auth()->user()->branch_id);
+        if(auth()->user()->isBranchUser())$salaryQuery->where('branch_id',auth()->user()->branch_id);
         $payrolls = $salaryQuery->limit(6)->get();
         $advances = $employee->advances()->with('repayments')->latest('advance_date')->get();
         $advanceBalance = $advances->sum('balance_cents');

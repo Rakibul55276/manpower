@@ -178,6 +178,20 @@ class SafetyShopTest extends TestCase
         $this->get(route('safety-shop.products.edit',$this->product))->assertOk()->assertSee('Selling price')->assertSee('Barcode');
         $this->get(route('safety-shop.suppliers.index'))->assertOk()->assertSee('PPE Supplier');
     }
+    public function test_product_gets_a_company_scoped_internal_barcode_when_left_blank()
+    {
+        $companyAdmin=User::create(['name'=>'Catalog Admin','username'=>'catalog_admin','email'=>'catalog_admin@test.local','password'=>Hash::make('Strong-password-123'),'role'=>'admin','company_id'=>$this->company->id,'is_active'=>true]);
+        $payload=['company_id'=>$this->company->id,'sku'=>'AUTO-01','barcode'=>'','name'=>'Auto barcode gloves','unit'=>'pair','cost'=>'3.07','price'=>'8.90','reorder_level'=>2,'is_active'=>1];
+        $this->login($companyAdmin)->post(route('safety-shop.products.store'),$payload)->assertSessionHasNoErrors();
+
+        $product=Product::where('sku','AUTO-01')->firstOrFail();
+        $this->assertMatchesRegularExpression('/^2\d{12}$/',$product->barcode);
+        $this->assertSame(str_pad((string)$this->company->id,5,'0',STR_PAD_LEFT),substr($product->barcode,1,5));
+
+        $body=substr($product->barcode,0,12); $sum=0;
+        foreach(str_split($body) as $index=>$digit)$sum+=(int)$digit*($index%2===0?1:3);
+        $this->assertSame((10-($sum%10))%10,(int)substr($product->barcode,-1));
+    }
     public function test_barcode_sale_uses_saved_price_and_printable_snapshot_receipt()
     {
         $this->receive();

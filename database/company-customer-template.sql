@@ -94,12 +94,14 @@ DROP TABLE IF EXISTS `designations`;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `designations` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `company_id` bigint(20) unsigned DEFAULT NULL,
   `name` varchar(255) NOT NULL,
   `is_active` tinyint(1) NOT NULL DEFAULT 1,
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `designations_name_unique` (`name`)
+  UNIQUE KEY `designations_company_id_name_unique` (`company_id`,`name`),
+  CONSTRAINT `designations_company_id_foreign` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `document_library_files`;
@@ -658,9 +660,12 @@ DROP TABLE IF EXISTS `safety_shop_receipt_settings`;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `safety_shop_receipt_settings` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `company_id` bigint(20) unsigned DEFAULT NULL,
   `company_name` varchar(180) NOT NULL DEFAULT 'Safety Shop',
   `tagline` varchar(180) DEFAULT NULL,
   `logo_path` varchar(255) DEFAULT NULL,
+  `header_image_path` varchar(255) DEFAULT NULL,
+  `footer_image_path` varchar(255) DEFAULT NULL,
   `default_location_id` bigint(20) unsigned DEFAULT NULL,
   `vat_number` varchar(30) DEFAULT NULL,
   `commercial_registration` varchar(30) DEFAULT NULL,
@@ -674,7 +679,9 @@ CREATE TABLE `safety_shop_receipt_settings` (
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
+  UNIQUE KEY `safety_shop_receipt_settings_company_id_unique` (`company_id`),
   KEY `safety_shop_receipt_settings_default_location_id_foreign` (`default_location_id`),
+  CONSTRAINT `safety_shop_receipt_settings_company_id_foreign` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE,
   CONSTRAINT `safety_shop_receipt_settings_default_location_id_foreign` FOREIGN KEY (`default_location_id`) REFERENCES `safety_shop_masters` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -884,6 +891,8 @@ CREATE TABLE `users` (
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+
+INSERT INTO `migrations` (`id`,`migration`,`batch`) VALUES (43,'2026_10_11_000001_add_tenant_database_to_companies',29),(44,'2026_10_11_000002_scope_document_branding_to_companies',29),(45,'2026_10_11_000003_scope_designations_to_companies',29),(46,'2026_10_11_000004_decouple_tenant_voucher_redeemer',29),(47,'2026_10_11_000005_add_document_letterhead_images',30);
 
 
 -- Laravel migration baseline; no users or business data are included.

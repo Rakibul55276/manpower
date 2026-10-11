@@ -2,7 +2,7 @@
 
 Laravel 8 application for workforce, branch operations, timesheets, payroll, employee advances, private documents, Safety Shop inventory/sales, optional invoicing, and voucher-controlled SaaS access.
 
-The current architecture uses one shared database with server-side company and branch isolation. SaaS vouchers control company access; they do not create a separate physical database per company.
+The application uses a central platform database plus one private database per company. Company users authenticate with company code, username, and password; operational queries run only on the resolved company database.
 
 ## Requirements
 
@@ -64,20 +64,20 @@ After changing `.env`, run `php artisan config:clear` (or `config:cache` in prod
 
 ## Roles
 
-| Capability | Superadmin | Company admin | Branch manager |
-|---|---:|---:|---:|
-| Configure the platform | Yes | No | No |
-| Access companies | All | Assigned company | Assigned company |
-| Access branches | All | All company branches | Assigned branch only |
-| Manage company users | Yes | No | No |
-| Issue/suspend SaaS access | Yes | No | No |
-| Redeem company voucher | N/A | Yes | No |
-| Full company analytics | Yes | Yes | No |
-| Edit pending hours | Yes | Yes | Workflow-limited |
-| Reopen approved hours | Yes | No | No |
-| Delete eligible records | Yes | Pending hours only | No |
+| Capability | System owner (`super_admin`) | Company admin | Branch manager | Branch issuer |
+|---|---:|---:|---:|---:|
+| Configure companies, users and SaaS access | Yes | No | No | No |
+| Access operational company data | No | Assigned company | Assigned branch | Assigned branch |
+| Full company analytics and revenue | No | Yes | No | No |
+| Create operational entries | No | Yes | Yes | Yes |
+| Approve/reject branch entries | No | Yes | Yes | No |
+| Reopen approved hours before payroll | No | Yes | No | No |
+| Archive employees or void/pay payroll | No | Yes | No | No |
+| Redeem the company voucher | N/A | Yes | No | No |
 
-One admin belongs to one company and covers all its branches. One manager belongs to one branch; another branch requires another manager account. Superadmins have no company/branch assignment and can configure anything required by the business.
+The hidden system owner is platform-only. Each company has exactly one company admin. Each branch has exactly one manager and may have one or many issuers. Managers and issuers cannot access sibling branches, and issuers have no approval authority.
+
+System-owner pages use the dedicated `/superadmin/...` URL namespace and the separate `/superadmin/login` portal. System-owner credentials are rejected by the normal company login. Company admins manage their branch teams under `/company/team/...`; these endpoint groups have separate authentication boundaries and cannot be interchanged.
 
 Direct URLs, validation, queries, downloads, and service transactions enforce these scopes. Submitted company/branch IDs are never authorization by themselves.
 
@@ -205,7 +205,7 @@ Do not continue to production if any isolation check fails.
 
 ## cPanel deployment for five companies
 
-The same application and shared database serve all five companies. You do not need five installations or five databases for the current architecture.
+The same application serves all five companies, but each company requires its own database imported from the customer template.
 
 ### SQL installation files
 
@@ -223,7 +223,11 @@ C:\xampp\mysql\bin\mysql.exe -u root -e "CREATE DATABASE manpower_customer_alpha
 C:\xampp\mysql\bin\mysql.exe -u root manpower_customer_alpha < database\company-customer-template.sql
 ```
 
-On cPanel, create the databases/users in **MySQL Databases**, then import the matching file with phpMyAdmin. Reuse the customer template for each customer database, changing only the target database and its restricted credentials. The current application runtime still uses shared-database isolation; switching live requests between these physical customer databases requires the tenant-connection resolver described by the central registry and must not be assumed from importing the files alone.
+On cPanel, create the databases/users in **MySQL Databases**, then import the matching file with phpMyAdmin. Reuse the customer template for each customer database, changing only the target database and its restricted credentials.
+
+Company users sign in at `/login` with **company code + username + password**. The company code is resolved centrally, the encrypted database credentials are loaded, and authentication runs inside that company's database. System owners use `/superadmin/login`, which never activates a company database.
+
+When adding a company, import `database/company-customer-template.sql` first, then enter the database connection and first administrator details in `/superadmin/companies/create`. Submission verifies the tenant schema, encrypts the database password using `APP_KEY`, creates the matching tenant company record, and provisions its first administrator. Never reuse one customer database for multiple companies, and do not change `APP_KEY` after credentials are saved unless they are re-entered.
 
 ### 1. Create the cPanel database
 

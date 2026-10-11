@@ -45,7 +45,7 @@ class TimesheetController extends Controller
         $query = Timesheet::with(['employee.company', 'employee.designation', 'creator', 'reviewer'])
             ->whereIn('employee_id', Access::employees()->where('employment_type', $workforce)->select('id'))
             ->where('work_date', 'like', $month.'%');
-        $user=auth()->user(); if(!$user->isSuperAdmin())$query->where('company_id',$user->company_id); if($user->isManager())$query->where('branch_id',$user->branch_id);
+        $user=auth()->user(); if(!$user->isSuperAdmin())$query->where('company_id',$user->company_id); if($user->isBranchUser())$query->where('branch_id',$user->branch_id);
         if ($request->filled('status')) { $query->where('status', $request->status); }
         if ($request->filled('employee_id')) { $query->where('employee_id', $request->employee_id); }
         if ($request->filled('employee_search')) { $search = trim($request->employee_search); $query->whereHas('employee', function ($employee) use ($search) { $employee->where('name', 'like', '%'.$search.'%')->orWhere('iqama_number', 'like', '%'.$search.'%'); }); }
@@ -84,7 +84,7 @@ class TimesheetController extends Controller
     {
         Access::employee($employee);
         abort_unless($employee->employment_type === $this->workforce(), 404);
-        $months = Timesheet::where('employee_id', $employee->id)->when(auth()->user()->isManager(),fn($q)=>$q->where('branch_id',auth()->user()->branch_id))->orderByDesc('work_date')->get('work_date')->map(function ($entry) {
+        $months = Timesheet::where('employee_id', $employee->id)->when(auth()->user()->isBranchUser(),fn($q)=>$q->where('branch_id',auth()->user()->branch_id))->orderByDesc('work_date')->get('work_date')->map(function ($entry) {
             return $entry->work_date->format('Y-m');
         })->unique()->values();
         $routePrefix = $this->prefix();
@@ -100,10 +100,10 @@ class TimesheetController extends Controller
             'months.*' => 'required|date_format:Y-m|distinct',
             'orientation' => 'required|in:portrait,landscape',
         ]);
-        $available = Timesheet::where('employee_id', $employee->id)->when(auth()->user()->isManager(),fn($q)=>$q->where('branch_id',auth()->user()->branch_id))->get('work_date')->map(function ($entry) { return $entry->work_date->format('Y-m'); })->unique();
+        $available = Timesheet::where('employee_id', $employee->id)->when(auth()->user()->isBranchUser(),fn($q)=>$q->where('branch_id',auth()->user()->branch_id))->get('work_date')->map(function ($entry) { return $entry->work_date->format('Y-m'); })->unique();
         $months = collect($data['months'])->unique()->sort()->values();
         if ($months->diff($available)->isNotEmpty()) { throw ValidationException::withMessages(['months' => 'Choose only months that contain timesheet entries for this employee.']); }
-        $entries = Timesheet::with(['creator', 'reviewer'])->where('employee_id', $employee->id)->when(auth()->user()->isManager(),fn($q)=>$q->where('branch_id',auth()->user()->branch_id))->where(function ($query) use ($months) {
+        $entries = Timesheet::with(['creator', 'reviewer'])->where('employee_id', $employee->id)->when(auth()->user()->isBranchUser(),fn($q)=>$q->where('branch_id',auth()->user()->branch_id))->where(function ($query) use ($months) {
             foreach ($months as $month) { $query->orWhere('work_date', 'like', $month.'%'); }
         })->orderBy('work_date')->get();
         $sheets = $months->map(function ($month) use ($entries) {
@@ -124,9 +124,7 @@ class TimesheetController extends Controller
     }
     private function canCorrectHours(Timesheet $timesheet)
     {
-        if ($timesheet->status === 'approved' || $timesheet->payroll_id) return false;
-        if (auth()->user()->isSuperAdmin()) return true;
-        return auth()->user()->isCompanyAdmin() && $timesheet->status === 'pending';
+        return auth()->user()->isCompanyAdmin() && !$timesheet->payroll_id;
     }
     private function form($timesheet)
     {
@@ -169,7 +167,7 @@ class TimesheetController extends Controller
             }
         });
         return redirect()->route($this->prefix().'.index', ['month' => substr($data['entries'][array_key_first($data['entries'])]['work_date'], 0, 7), 'employee_id' => $data['employee_id']])
-            ->with('success', count($data['entries']).' dates saved and submitted for Super Admin approval.');
+            ->with('success', count($data['entries']).' dates saved and submitted for company admin approval.');
     }
     public function update(Request $request, Timesheet $timesheet) { $this->check($timesheet); $timesheet->loadMissing('employee'); abort_unless($this->canCorrectHours($timesheet), 403, 'Only pending, payroll-unlocked entries can be edited by a company admin.'); return $this->save($request, $timesheet); }
     private function unlocked(Employee $employee, $date)
@@ -199,7 +197,7 @@ class TimesheetController extends Controller
             $duplicate = Timesheet::where('employee_id', $employee->id)->whereDate('work_date', $data['work_date']);
             if ($timesheet->exists) { $duplicate->where('id', '!=', $timesheet->id); }
             if ($duplicate->exists()) { throw ValidationException::withMessages(['work_date' => 'An hours entry already exists for this employee and date. Edit the existing entry instead.']); }
-            if ($timesheet->status === 'approved' || $timesheet->payroll_id) { throw ValidationException::withMessages(['work_date' => 'Approved or payroll-linked entries cannot be edited.']); }
+            if ($timesheet->payroll_id) { throw ValidationException::withMessages(['work_date' => 'Delete the linked payroll before editing this entry.']); }
             if ($employee->status !== 'active') { throw ValidationException::withMessages(['employee_id' => 'This employee is inactive.']); }
             if ($data['work_date'] < $employee->joined_on->format('Y-m-d')) { throw ValidationException::withMessages(['work_date' => 'Work date cannot be before the joining date.']); }
             $this->unlocked($employee, $data['work_date']);
@@ -209,13 +207,13 @@ class TimesheetController extends Controller
             if (!$timesheet->exists) { $timesheet->fill(['created_by' => auth()->id(), 'hourly_rate_cents' => $employee->hourly_rate_cents, 'overtime_rate_cents' => $employee->overtime_rate_cents, 'overtime_multiplier_units' => $employee->overtime_multiplier_units]); }
             $timesheet->save(); ActivityLog::record('Saved hours', 'Timesheet #'.$timesheet->id.' · '.$employee->name.' · '.$data['work_date']);
         });
-        return redirect()->route($this->prefix().'.index')->with('success', 'Hours saved and submitted for Super Admin approval.');
+        return redirect()->route($this->prefix().'.index')->with('success', 'Hours saved and submitted for company admin approval.');
     }
     public function review(Request $request, Timesheet $timesheet)
     {
         $this->check($timesheet);
         $data = $request->validate(['status' => 'required|in:approved,rejected,pending', 'review_note' => 'required_if:status,rejected,pending|nullable|string|max:1000']);
-        if ($data['status'] === 'pending') { abort_unless($request->user()->isSuperAdmin(), 403, 'Only the Super Admin can reopen approved timesheets.'); }
+        if ($data['status'] === 'pending') { abort_unless($request->user()->isCompanyAdmin(), 403, 'Only the company admin can reopen approved timesheets.'); }
         DB::transaction(function () use ($timesheet, $data) {
             $employee = Employee::lockForUpdate()->findOrFail($timesheet->employee_id);
             $entry = Timesheet::lockForUpdate()->findOrFail($timesheet->id);
@@ -264,7 +262,7 @@ class TimesheetController extends Controller
             $employee = Employee::lockForUpdate()->findOrFail($timesheet->employee_id);
             $entry = Timesheet::lockForUpdate()->findOrFail($timesheet->id);
             $this->unlocked($employee, $entry->work_date->format('Y-m-d'));
-            abort_unless(!$entry->payroll_id && (auth()->user()->isSuperAdmin() ? $entry->status !== 'approved' : auth()->user()->isCompanyAdmin() && $entry->status === 'pending'), 403);
+            abort_unless(!$entry->payroll_id && auth()->user()->isCompanyAdmin(), 403);
             $entry->delete(); ActivityLog::record('Deleted hours', 'Timesheet #'.$entry->id.' · '.$employee->name);
         });
         return redirect()->route($this->prefix().'.index', ['month'=>$timesheet->work_date->format('Y-m'),'employee_id'=>$timesheet->employee_id])->with('success', 'Entry deleted.');

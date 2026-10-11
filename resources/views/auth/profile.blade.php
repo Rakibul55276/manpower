@@ -21,7 +21,7 @@
         <div class="card-body">
             <dl class="detail-list">
                 <div><dt>Name</dt><dd>{{ auth()->user()->name }}</dd></div>
-                <div><dt>Role</dt><dd>{{ auth()->user()->role === 'super_admin' ? 'Super Admin' : (auth()->user()->role === 'admin' ? 'Admin Approver' : 'Manager') }}</dd></div>
+                <div><dt>Role</dt><dd>{{ auth()->user()->isSuperAdmin() ? 'System Owner' : (auth()->user()->isCompanyAdmin() ? 'Company Admin' : (auth()->user()->isManager() ? 'Branch Manager' : 'Branch Issuer')) }}</dd></div>
                 <div class="full"><dt>Username</dt><dd>{{ auth()->user()->username }}</dd></div>
                 <div class="full"><dt>Company access</dt><dd>{{ auth()->user()->isSuperAdmin() ? 'All companies' : optional(auth()->user()->company)->name }}</dd></div>
                 <div class="full"><dt>Branch access</dt><dd>{{ auth()->user()->isSuperAdmin() ? 'All branches' : (auth()->user()->isCompanyAdmin() ? 'All company branches' : optional(auth()->user()->branch)->name) }}</dd></div>

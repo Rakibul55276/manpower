@@ -15,6 +15,11 @@
 <input id="checkout-customer-type" name="customer_type" type="hidden" value="retail"><input id="checkout-customer-contact" name="customer_contact_person" type="hidden" value=""><input id="checkout-customer-email" name="customer_email" type="hidden" value=""><input id="checkout-customer-vat" name="customer_vat_number" type="hidden" value=""><input id="checkout-customer-cr" name="customer_commercial_registration" type="hidden" value=""><input id="checkout-customer-address" name="customer_address" type="hidden" value="">
 <div class="field"><label for="checkout-barcode">Scan / type barcode</label><input id="checkout-barcode" autocomplete="off" maxlength="100" placeholder="Scan barcode, then Enter"><button id="checkout-add" class="btn secondary" type="button">Add scanned product</button></div>
 </div><p id="checkout-message" role="status" aria-live="polite"></p>
+<div id="checkout-product-preview" class="notice info" hidden>
+    <strong id="checkout-preview-name"></strong>
+    <span id="checkout-preview-meta" class="sub"></span>
+    <span id="checkout-preview-stock" class="sub"></span>
+</div>
 <div class="table-wrap"><table><thead><tr><th>Product / barcode</th><th>Available</th><th>Unit price SAR</th><th>Quantity</th><th>Total SAR</th><th></th></tr></thead><tbody id="checkout-lines"><tr><td colspan="6">Scan a product to start.</td></tr></tbody></table></div>
 <div class="form-grid" style="margin-top:20px">
 <div class="field"><label>Subtotal (SAR)</label><strong id="checkout-subtotal">0.00</strong></div>
@@ -33,6 +38,6 @@
 <div class="form-footer"><button id="checkout-submit" class="btn" type="submit" disabled>Complete sale</button></div>
 <noscript><p>Enable JavaScript to use barcode checkout.</p></noscript>
 </form></div></div>
-<script src="{{ asset('js/safety-shop/sales/checkout.js') }}" defer></script>
+<script src="{{ asset('js/safety-shop/sales/checkout.js') }}?v={{ filemtime(public_path('js/safety-shop/sales/checkout.js')) }}" defer></script>
 @endif
 @endsection

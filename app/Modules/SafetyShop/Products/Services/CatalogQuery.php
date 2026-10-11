@@ -8,7 +8,7 @@ class CatalogQuery
     public function build(Request $r)
     {
         $r->validate(['search'=>'nullable|string|max:150','category'=>'nullable|integer','status'=>'nullable|in:active,inactive','low'=>'nullable|in:1']);
-        $q = Product::with('category')->select('safety_shop_products.*')->selectSub(Stock::selectRaw('COALESCE(SUM(quantity),0)')->whereColumn('product_id','safety_shop_products.id'), 'stock_total');
+        $q = Product::where('company_id',$r->user()->company_id)->with('category')->select('safety_shop_products.*')->selectSub(Stock::selectRaw('COALESCE(SUM(quantity),0)')->whereColumn('product_id','safety_shop_products.id'), 'stock_total');
         if ($r->filled('search')) $q->where(function ($q) use ($r) { $q->where('barcode','like','%'.$r->search.'%')->orWhere('sku','like','%'.$r->search.'%')->orWhere('name','like','%'.$r->search.'%')->orWhere('brand','like','%'.$r->search.'%'); });
         if ($r->filled('category')) $q->where('category_id',$r->category);
         if ($r->filled('status')) $q->where('is_active',$r->status === 'active');

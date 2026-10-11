@@ -80,16 +80,19 @@ class SaasVoucherTest extends TestCase
         $super=$this->user('super_admin'); $alpha=$this->company('ALPHA'); $beta=$this->company('BETA');
         $this->user('admin',$alpha); $this->user('manager',$beta);
         $this->actingAs($super)->get(route('users.index'))->assertOk()
-            ->assertSee('Platform superadmins')->assertSee('Company ALPHA')->assertSee('Company BETA')
+            ->assertSee('System owners')->assertSee('Company ALPHA')->assertSee('Company BETA')
             ->assertSee('Company Admin')->assertSee('Branch Manager');
     }
 
-    public function test_document_branding_page_manages_each_company_name()
+    public function test_document_branding_is_company_admin_only_and_company_scoped()
     {
-        $super=$this->user('super_admin'); $company=$this->company('BRAND');
-        $this->actingAs($super)->get(route('document-branding.edit'))->assertOk()->assertSee('Company BRAND')->assertSee('Company branding');
-        $this->put(route('document-branding.companies.update',$company),['name'=>'Updated Client Name'])->assertSessionHasNoErrors();
-        $this->assertSame('Updated Client Name',$company->fresh()->name);
+        $super=$this->user('super_admin'); $company=$this->company('BRAND'); $admin=$this->user('admin',$company);
+        $company->update(['subscription_status'=>'active','subscription_expires_at'=>today()->addMonth()]);
+        $this->actingAs($super)->get(route('document-branding.edit'))->assertForbidden();
+        $this->flushSession();
+        $this->actingAs($admin)->get(route('document-branding.edit'))->assertOk()->assertSee('Company BRAND')->assertSee('Company branding');
+        $this->put(route('document-branding.update'),['company_name'=>'Updated Client Name'])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('safety_shop_receipt_settings',['company_id'=>$company->id,'company_name'=>'Updated Client Name']);
     }
 
 }

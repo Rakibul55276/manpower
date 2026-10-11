@@ -12,7 +12,8 @@
 <a class="quick-action" href="{{ route('safety-shop.returns.index') }}"><strong>Process a return</strong><span>Find the original receipt and restore returned stock.</span></a>
 <a class="quick-action" href="{{ route('safety-shop.customers.index') }}"><strong>Customer directory</strong><span>Retail customers and company purchasers in one place.</span></a>
 <a class="quick-action" href="{{ route('safety-shop.products.index') }}"><strong>Products and stock</strong><span>Search stock, prices, barcodes and reorder levels.</span></a>
-<a class="quick-action" href="{{ route('safety-shop.reports.index') }}"><strong>Reports and analytics</strong><span>Revenue, VAT, returns, cost and profitability.</span></a>
+<a class="quick-action" href="{{ route('dashboard') }}"><strong>Combined analytics</strong><span>Manpower and Safety Shop performance in one dashboard.</span></a>
+<a class="quick-action" href="{{ route('audit.index',['report'=>'shop_sales']) }}"><strong>Audit and custom reports</strong><span>Filter sales, returns, stock, workforce, payroll, and system events.</span></a>
 </div></div></div>
 <div class="stats">
 <div class="stat"><div class="label">Sales today</div><div class="value">{{ number_format($metrics['sales_today']) }}</div><small>SAR {{ \App\Services\Pay::money($metrics['revenue_today']) }} received</small></div>

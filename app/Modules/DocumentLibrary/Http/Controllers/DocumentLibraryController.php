@@ -15,7 +15,8 @@ class DocumentLibraryController extends Controller
     public function index(Request $request)
     {
         $query = LibraryDocument::with(['owner', 'uploader'])->latest('id');
-        if (!$request->user()->isSuperAdmin()) $query->where('owner_id', $request->user()->id);
+        if ($request->user()->isCompanyAdmin()) $query->whereHas('owner',fn($owner)=>$owner->where('company_id',$request->user()->company_id));
+        elseif (!$request->user()->isSuperAdmin()) $query->where('owner_id', $request->user()->id);
         if ($request->filled('search')) {
             $search = trim($request->search);
             $query->where(function ($q) use ($search) {
@@ -131,7 +132,7 @@ class DocumentLibraryController extends Controller
 
     public function destroy(Request $request, LibraryDocument $document)
     {
-        abort_unless($request->user()->isAdmin(), 403);
+        abort_unless($request->user()->isCompanyAdmin(), 403);
         $this->authorizeDocument($request, $document);
         $title = $document->title;
         $path = $document->storage_path;
@@ -144,6 +145,10 @@ class DocumentLibraryController extends Controller
 
     private function authorizeDocument(Request $request, LibraryDocument $document)
     {
+        if($request->user()->isCompanyAdmin()){
+            abort_unless((int)$document->owner()->value('company_id')===(int)$request->user()->company_id,403);
+            return;
+        }
         abort_unless($request->user()->isSuperAdmin() || $document->owner_id === $request->user()->id, 403);
     }
 

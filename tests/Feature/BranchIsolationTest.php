@@ -2,8 +2,15 @@
 namespace Tests\Feature;
 
 use App\Models\{Branch,Company,Designation,Employee,Payroll,Timesheet,User};
+use App\Modules\SafetyShop\Products\Models\Product;
+use App\Modules\SafetyShop\Sales\Models\Customer;
+use App\Modules\SafetyShop\Shared\Models\Master;
+use App\Modules\SafetyShop\Shared\Models\ReceiptSetting;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class BranchIsolationTest extends TestCase
@@ -14,6 +21,7 @@ class BranchIsolationTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config(['invoicing.enabled'=>true, 'safety_shop.enabled'=>true]);
         $this->company=Company::create(['name'=>'Tenant Alpha','location'=>'Riyadh']);
         $this->otherCompany=Company::create(['name'=>'Tenant Beta','location'=>'Jeddah']);
         $this->branch=Branch::create(['company_id'=>$this->company->id,'name'=>'North','code'=>'NORTH','location'=>'Riyadh','is_active'=>true]);
@@ -68,11 +76,141 @@ class BranchIsolationTest extends TestCase
         $this->assertSame('pending',$ownTime->fresh()->status);
     }
 
-    public function test_global_unscoped_modules_are_not_exposed_to_company_accounts()
+    public function test_company_admin_gets_company_scoped_safety_shop_while_other_roles_are_blocked()
     {
-        $this->actingAs($this->admin)->get(route('invoicing.index'))->assertForbidden();
+        $ownCategory=Master::create(['company_id'=>$this->company->id,'type'=>'category','name'=>'Alpha protection','sku_prefix'=>'ALPHA','is_active'=>true]);
+        $foreignCategory=Master::create(['company_id'=>$this->otherCompany->id,'type'=>'category','name'=>'Beta private protection','sku_prefix'=>'BETA','is_active'=>true]);
+        $ownProduct=Product::create(['company_id'=>$this->company->id,'sku'=>'ALPHA-0001','barcode'=>'ALPHA001','name'=>'Alpha helmet','category_id'=>$ownCategory->id,'unit'=>'piece','is_active'=>true]);
+        $foreignProduct=Product::create(['company_id'=>$this->otherCompany->id,'sku'=>'BETA-0001','barcode'=>'BETA001','name'=>'Beta private helmet','category_id'=>$foreignCategory->id,'unit'=>'piece','is_active'=>true]);
+        Customer::create(['company_id'=>$this->otherCompany->id,'name'=>'Beta private customer','customer_type'=>'retail','country_code'=>'SA','is_active'=>true,'approval_status'=>'approved']);
+        $this->actingAs($this->admin)->get(route('safety-shop.stock.index'))->assertOk();
+        $this->get(route('invoicing.index'))->assertForbidden();
+        $this->get(route('safety-shop.index'))->assertOk();
+        $this->get(route('safety-shop.products.index'))->assertOk()->assertSee($ownProduct->name)->assertDontSee($foreignProduct->name);
+        $this->get(route('safety-shop.categories.index'))->assertOk()->assertSee($ownCategory->name)->assertDontSee($foreignCategory->name);
+        $this->get(route('safety-shop.customers.index'))->assertOk()->assertDontSee('Beta private customer');
+        $this->get(route('safety-shop.products.show',$foreignProduct))->assertNotFound();
+        $this->get(route('safety-shop.categories.edit',$foreignCategory))->assertNotFound();
+        $this->flushSession()->actingAs($this->manager)->get(route('safety-shop.index'))->assertForbidden();
+        $this->get(route('companies.branches.index',$this->company))->assertForbidden();
+    }
+
+    public function test_company_admin_has_one_combined_analytics_and_audit_center()
+    {
+        $this->actingAs($this->admin)->get(route('dashboard'))->assertOk()->assertSee('Safety Shop summary')->assertSee('Six-month operating trend');
+        foreach(['activity','employees','timesheets','salaries','shop_sales','shop_returns','stock_movements'] as $report){
+            $this->get(route('audit.index',['report'=>$report]))->assertOk();
+        }
+        $this->get(route('audit.csv',['report'=>'shop_sales']))->assertOk()->assertHeader('Content-Type','text/csv; charset=UTF-8');
+        $this->assertFalse(\Illuminate\Support\Facades\Route::has('safety-shop.reports.index'));
+        $this->flushSession()->actingAs($this->manager)->get(route('audit.index',['report'=>'shop_sales']))->assertForbidden();
+    }
+
+    public function test_system_owner_can_manage_platform_but_cannot_open_company_operations()
+    {
+        $super=$this->user('system_owner','super_admin',null,null);
+        $this->actingAs($super)->get(route('companies.index'))->assertOk();
+        $this->get(route('superadmin.index'))->assertRedirect(route('companies.index'));
+        $this->get(route('users.index'))->assertOk();
+        $this->get(route('dashboard'))->assertRedirect(route('superadmin.index'));
+        $this->get(route('employees.index'))->assertForbidden();
+        $this->get(route('timesheets.index'))->assertForbidden();
+        $this->get(route('payrolls.index'))->assertForbidden();
         $this->get(route('safety-shop.index'))->assertForbidden();
-        $this->flushSession()->actingAs($this->manager)->get(route('companies.branches.index',$this->company))->assertForbidden();
+        $this->get(route('invoicing.index'))->assertForbidden();
+        $this->get(route('document-library.index'))->assertForbidden();
+        $this->assertStringContainsString('/superadmin/companies',route('companies.index'));
+        $this->assertStringContainsString('/superadmin/users',route('users.index'));
+        $this->get('/companies')->assertNotFound();
+        $this->get('/users')->assertNotFound();
+    }
+
+    public function test_system_owner_uses_separate_superadmin_login_portal()
+    {
+        $super=$this->user('portal_owner','super_admin',null,null);
+        $this->get(route('superadmin.index'))->assertRedirect(route('superadmin.login'));
+        $this->get(route('superadmin.login'))->assertOk()->assertSee('Superadmin');
+        $this->post(route('login.submit'),['username'=>$super->username,'password'=>'StrongPass1!'])->assertSessionHasErrors('company_code');
+        $this->assertGuest();
+        $this->post(route('superadmin.login.submit'),['username'=>$super->username,'password'=>'StrongPass1!'])->assertRedirect(route('companies.index'));
+        $this->assertAuthenticatedAs($super);
+        $this->post(route('superadmin.logout'))->assertRedirect(route('superadmin.login'));
+        $this->assertGuest();
+    }
+
+    public function test_manager_approves_branch_entries_and_issuer_is_entry_only()
+    {
+        $issuer=$this->user('branch_issuer','issuer',$this->company->id,$this->branch->id);
+        $employee=$this->employee('Issuer Worker',$this->company,$this->branch);
+        $entry=$this->timesheet($employee);
+        $this->actingAs($issuer)->get(route('timesheets.index'))->assertOk()->assertSee('Issuer Worker');
+        $this->post(route('timesheets.review',$entry),['status'=>'approved'])->assertForbidden();
+        $this->flushSession()->actingAs($this->manager)->post(route('timesheets.review',$entry),['status'=>'approved'])->assertSessionHasNoErrors();
+        $this->assertSame('approved',$entry->fresh()->status);
+    }
+
+    public function test_company_admin_can_edit_and_delete_approved_unlocked_hours()
+    {
+        $employee=$this->employee('Admin Correction Worker',$this->company,$this->branch);
+        $entry=$this->timesheet($employee); $entry->update(['status'=>'approved','reviewed_by'=>$this->manager->id,'reviewed_at'=>now()]);
+        $this->actingAs($this->admin)->get(route('timesheets.edit',$entry))->assertOk();
+        $this->put(route('timesheets.update',$entry),['employee_id'=>$employee->id,'work_date'=>$entry->work_date->format('Y-m-d'),'regular_hours'=>'7.50','overtime_hours'=>'0.50','notes'=>'Admin correction'])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('timesheets',['id'=>$entry->id,'regular_units'=>750,'overtime_units'=>50,'status'=>'pending']);
+        $entry->update(['status'=>'approved']);
+        $this->delete(route('timesheets.destroy',$entry))->assertSessionHasNoErrors();
+        $this->assertDatabaseMissing('timesheets',['id'=>$entry->id]);
+    }
+
+    public function test_company_admin_can_reopen_or_delete_any_salary_status()
+    {
+        $employee=$this->employee('Admin Salary Worker',$this->company,$this->branch);
+        $payroll=$this->payroll($employee); $payroll->update(['status'=>'paid','approved_by'=>$this->admin->id,'approved_at'=>now(),'paid_by'=>$this->admin->id,'paid_at'=>now()]);
+        $this->actingAs($this->admin)->put(route('payrolls.update',$payroll),['allowance'=>'20.00','deduction'=>'5.00','notes'=>'Corrected by company admin'])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('payrolls',['id'=>$payroll->id,'status'=>'pending','allowance_cents'=>2000,'deduction_cents'=>500,'approved_by'=>null,'paid_by'=>null]);
+        $payroll->update(['status'=>'paid','approved_by'=>$this->admin->id,'approved_at'=>now(),'paid_by'=>$this->admin->id,'paid_at'=>now()]);
+        $this->delete(route('payrolls.destroy',$payroll))->assertSessionHasNoErrors();
+        $this->assertDatabaseMissing('payrolls',['id'=>$payroll->id]);
+    }
+
+    public function test_branch_allows_one_manager_and_multiple_issuers()
+    {
+        $admin=$this->admin;
+        foreach (['issuer_one','issuer_two'] as $username) {
+            $this->actingAs($admin)->post(route('company-users.store'),['name'=>$username,'username'=>$username,'password'=>'StrongPass1!','password_confirmation'=>'StrongPass1!','role'=>'issuer','is_active'=>1,'company_id'=>$this->company->id,'branch_id'=>$this->branch->id])->assertSessionHasNoErrors();
+        }
+        $this->assertSame(2,User::where('role','issuer')->where('branch_id',$this->branch->id)->count());
+    }
+
+    public function test_company_admin_manages_only_manager_and_issuers_in_own_company()
+    {
+        $this->actingAs($this->admin)->get(route('company-users.create'))->assertOk()->assertDontSee('Global (System Owner only)')->assertSee('type="hidden" value="'.$this->company->id.'"',false);
+        $payload=['name'=>'New Issuer','username'=>'new_issuer','password'=>'StrongPass1!','password_confirmation'=>'StrongPass1!','role'=>'issuer','is_active'=>1,'company_id'=>$this->otherCompany->id,'branch_id'=>$this->branch->id];
+        $this->post(route('company-users.store'),$payload)->assertSessionHasNoErrors();
+        $created=User::where('username','new_issuer')->firstOrFail();
+        $this->assertSame($this->company->id,$created->company_id);
+        $this->assertSame($this->branch->id,$created->branch_id);
+        $payload['username']='forged_admin'; $payload['role']='admin';
+        $this->post(route('company-users.store'),$payload)->assertSessionHasErrors('role');
+        $foreign=$this->user('foreign_issuer','issuer',$this->otherCompany->id,$this->foreignBranch->id);
+        $this->get(route('company-users.edit',$foreign))->assertForbidden();
+    }
+
+    public function test_company_admin_can_upload_private_pdf_header_and_footer_images()
+    {
+        $storageRoot=sys_get_temp_dir().DIRECTORY_SEPARATOR.'hr-letterhead-test-storage';
+        File::ensureDirectoryExists($storageRoot);
+        config(['filesystems.disks.local.root'=>$storageRoot]);
+        ReceiptSetting::create(['company_id'=>$this->company->id,'company_name'=>$this->company->name]);
+        $response=$this->actingAs($this->admin)->put(route('document-branding.update'),[
+            'company_name'=>$this->company->name,
+            'header_image'=>UploadedFile::fake()->image('header.png',1600,220),
+            'footer_image'=>UploadedFile::fake()->image('footer.png',1600,190),
+        ]);
+        $response->assertSessionHasNoErrors();
+        $settings=ReceiptSetting::forCompany($this->company->id)->firstOrFail();
+        Storage::disk('local')->assertExists($settings->header_image_path);
+        Storage::disk('local')->assertExists($settings->footer_image_path);
+        $this->assertStringStartsWith('data:image/png;base64,',\App\Services\Documents::brandingAsset($settings->header_image_path));
     }
 
     public function test_employee_advance_is_tenant_scoped_and_deducted_from_payroll()
@@ -89,15 +227,16 @@ class BranchIsolationTest extends TestCase
         $this->assertDatabaseHas('employee_advance_repayments',['payroll_id'=>$payroll->id,'amount_cents'=>2000]);
     }
 
-    public function test_super_admin_enforces_one_company_admin_and_one_manager_per_branch()
+    public function test_role_owners_enforce_one_company_admin_and_one_manager_per_branch()
     {
         $super=$this->user('super_scope','super_admin',null,null);
         $base=['name'=>'Duplicate','username'=>'duplicate','password'=>'StrongPass1!','password_confirmation'=>'StrongPass1!','role'=>'admin','is_active'=>1,'company_id'=>$this->company->id];
         $this->actingAs($super)->post(route('users.store'),$base)->assertSessionHasErrors('company_id');
         $base['role']='manager'; $base['branch_id']=$this->branch->id;
-        $this->post(route('users.store'),$base)->assertSessionHasErrors('branch_id');
+        $this->post(route('users.store'),$base)->assertSessionHasErrors('role');
+        $this->flushSession()->actingAs($this->admin)->post(route('company-users.store'),$base)->assertSessionHasErrors('branch_id');
         $base['branch_id']=$this->foreignBranch->id;
-        $this->post(route('users.store'),$base)->assertSessionHasErrors('branch_id');
+        $this->post(route('company-users.store'),$base)->assertSessionHasErrors('branch_id');
         $this->assertDatabaseMissing('users',['username'=>'duplicate']);
     }
 

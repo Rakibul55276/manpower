@@ -13,7 +13,7 @@ class SubscriptionController extends Controller
         abort_unless(config('saas.saas_voucher_enabled'), 404);
         abort_unless(!$request->user()->isSuperAdmin() && $request->user()->company, 403);
         $company=Company::findOrFail($request->user()->company_id);
-        $redemptions=SaasVoucherRedemption::where('company_id',$company->id)->with(['voucher','redeemer'])->latest('redeemed_at')->limit(10)->get();
+        $redemptions=SaasVoucherRedemption::where('company_id',$company->id)->with('voucher')->latest('redeemed_at')->limit(10)->get();
         return response()->view('saas.subscription', compact('company','redemptions'))->header('Cache-Control','no-store, no-cache, must-revalidate, max-age=0');
     }
     public function redeem(Request $request, SaasVoucherService $service)

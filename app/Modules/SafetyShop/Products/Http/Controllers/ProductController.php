@@ -7,6 +7,7 @@ use App\Modules\SafetyShop\Shared\Models\Master;
 use App\Modules\SafetyShop\Products\Models\Product;
 use App\Modules\SafetyShop\Stock\Models\Stock;
 use App\Modules\SafetyShop\Products\Services\CatalogQuery;
+use App\Modules\SafetyShop\Products\Services\BarcodeGenerator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -16,15 +17,16 @@ class ProductController extends Controller
     public function index(Request $r)
     {
         $products = $this->productsQuery($r)->orderBy('name')->paginate(20)->withQueryString();
-        $categories = Master::where('type','category')->orderBy('name')->get();
-        $metrics = ['products'=>Product::where('is_active',true)->count(),'units'=>Stock::sum('quantity'),'value'=>Stock::join('safety_shop_products','product_id','=','safety_shop_products.id')->sum(DB::raw('quantity * cost_cents')),'low'=>Product::where('is_active',true)->whereRaw('(SELECT COALESCE(SUM(quantity),0) FROM safety_shop_stocks WHERE product_id = safety_shop_products.id) <= reorder_level')->count()];
+        $companyId=$r->user()->company_id;
+        $categories = Master::where('company_id',$companyId)->where('type','category')->orderBy('name')->get();
+        $metrics = ['products'=>Product::where('company_id',$companyId)->where('is_active',true)->count(),'units'=>Stock::whereHas('product',fn($q)=>$q->where('company_id',$companyId))->sum('quantity'),'value'=>Stock::join('safety_shop_products','product_id','=','safety_shop_products.id')->where('safety_shop_products.company_id',$companyId)->sum(DB::raw('quantity * cost_cents')),'low'=>Product::where('company_id',$companyId)->where('is_active',true)->whereRaw('(SELECT COALESCE(SUM(quantity),0) FROM safety_shop_stocks WHERE product_id = safety_shop_products.id) <= reorder_level')->count()];
         return view('safety-shop.products.index',compact('products','categories','metrics'));
     }
     public function create() { return $this->form(new Product(['unit'=>'piece','is_active'=>true,'reorder_level'=>0,'cost_cents'=>0,'price_cents'=>0])); }
-    public function edit(Product $product) { return $this->form($product); }
+    public function edit(Product $product) { $this->authorizeCompany($product); return $this->form($product); }
     private function form($product)
     {
-        $companyId=$product->company_id ?: request('company_id') ?: Company::where('is_active',true)->orderBy('id')->value('id');
+        $companyId=$product->company_id ?: auth()->user()->company_id;
         abort_unless($companyId,422,'Create an active company before adding Safety Shop products.');
         $categories=Master::where('company_id',$companyId)->where('type','category')->where(function($q)use($product){$q->where('is_active',true)->orWhere('id',$product->category_id ?: 0);})->orderBy('name')->get();
         $suggestions=[];
@@ -37,6 +39,7 @@ class ProductController extends Controller
     }
     public function barcodeLookup(Request $request)
     {
+        $request->merge(['company_id'=>$request->user()->company_id]);
         $data=$request->validate(['barcode'=>'required|string|max:100','company_id'=>'required|integer|exists:companies,id']);
         $product=Product::where('company_id',$data['company_id'])->where('barcode',$data['barcode'])->first();
         if(!$product)return response()->json(['found'=>false]);
@@ -44,6 +47,7 @@ class ProductController extends Controller
     }
     public function skuSuggestion(Request $request)
     {
+        $request->merge(['company_id'=>$request->user()->company_id]);
         $data=$request->validate(['company_id'=>'required|integer|exists:companies,id','category_id'=>'required|integer']);
         $category=Master::where('company_id',$data['company_id'])->where('type','category')->whereKey($data['category_id'])->firstOrFail();
         abort_unless($category->sku_prefix,422,'Set an SKU prefix for this category first.');
@@ -53,22 +57,47 @@ class ProductController extends Controller
     }
     private function productData(Request $r, $id=null)
     {
-        $companyId=$r->input('company_id');
+        $companyId=(int)$r->user()->company_id; $r->merge(['company_id'=>$companyId]);
         $data=$r->validate(['company_id'=>'required|integer|exists:companies,id','barcode'=>['nullable','string','max:100','regex:/^[A-Za-z0-9._-]+$/',Rule::unique('safety_shop_products')->where(fn($q)=>$q->where('company_id',$companyId))->ignore($id)],'sku'=>['required','string','max:50',Rule::unique('safety_shop_products')->where(fn($q)=>$q->where('company_id',$companyId))->ignore($id)],'name'=>'required|string|max:150','category_id'=>['nullable',Rule::exists('safety_shop_masters','id')->where(fn($q)=>$q->where('type','category')->where('company_id',$companyId))],'brand'=>'nullable|string|max:100','size'=>'nullable|string|max:50','unit'=>'required|string|max:30','safety_standard'=>'nullable|string|max:150','reorder_level'=>'required|integer|min:0|max:1000000','cost'=>'required|regex:/^\d{1,8}(\.\d{1,2})?$/','price'=>'required|regex:/^\d{1,8}(\.\d{1,2})?$/','is_active'=>'required|boolean','notes'=>'nullable|string|max:2000']);
         foreach (['cost','price'] as $key) { $parts=explode('.',$data[$key]); $data[$key.'_cents']=(int)$parts[0]*100+(int)str_pad($parts[1]??'',2,'0'); unset($data[$key]); }
         return $data;
     }
-    public function store(Request $r) { $product=Product::create($this->productData($r)); ActivityLog::record('Created safety shop product',$product->sku); return redirect()->route('safety-shop.products.show',$product)->with('success','Product created. Receive stock to set its opening balance.'); }
+    public function store(Request $r)
+    {
+        $data=$this->productData($r);
+        $product=DB::transaction(function () use ($data) {
+            $product=Product::create($data);
+            if(blank($product->barcode)){
+                $product->barcode=(new BarcodeGenerator)->forProduct($product);
+                $product->save();
+            }
+            ActivityLog::record('Created safety shop product',$product->sku);
+            return $product;
+        });
+        return redirect()->route('safety-shop.products.show',$product)->with('success','Product created. Barcode '.$product->barcode.' is ready; receive stock to set its opening balance.');
+    }
     public function update(Request $r, Product $product)
     {
+        $this->authorizeCompany($product);
         $data=$this->productData($r,$product->id);
-        DB::transaction(function () use ($product,$data) { Product::whereKey($product->id)->lockForUpdate()->firstOrFail()->update($data); ActivityLog::record('Updated safety shop product',$product->sku); });
+        DB::transaction(function () use ($product,$data) {
+            $locked=Product::whereKey($product->id)->lockForUpdate()->firstOrFail();
+            $locked->update($data);
+            if(blank($locked->barcode)){
+                $locked->barcode=(new BarcodeGenerator)->forProduct($locked);
+                $locked->save();
+            }
+            ActivityLog::record('Updated safety shop product',$locked->sku);
+        });
         return redirect()->route('safety-shop.products.show',$product)->with('success','Product updated.');
     }
     public function show(Product $product)
     {
+        $this->authorizeCompany($product);
         $product->load(['category','stocks.location']); $movements=$product->movements()->with(['product','location','destination','supplier','creator'])->latest('id')->paginate(20);
         return view('safety-shop.products.show',compact('product','movements'));
     }
+
+    private function authorizeCompany(Product $product): void { abort_unless((int)$product->company_id===(int)auth()->user()->company_id,404); }
 
 }

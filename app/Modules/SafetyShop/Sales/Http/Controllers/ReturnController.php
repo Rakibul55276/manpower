@@ -11,9 +11,9 @@ use Illuminate\Support\Str;
 
 class ReturnController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $returns=SaleReturn::with(['sale','location','creator'])->latest('id')->paginate(25);
+        $returns=SaleReturn::whereHas('location',fn($q)=>$q->where('company_id',$request->user()->company_id))->with(['sale','location','creator'])->latest('id')->paginate(25);
         return view('safety-shop.returns.index', compact('returns'));
     }
 
@@ -27,7 +27,7 @@ class ReturnController extends Controller
         $data=$request->validate(['receipt'=>'required|string|max:50']);
         $receipt=preg_replace('/^SALE-/i', '', trim($data['receipt']));
         abort_unless(ctype_digit($receipt), 404);
-        $sale=Sale::with(['lines','location'])->findOrFail((int)$receipt);
+        $sale=Sale::whereHas('location',fn($q)=>$q->where('company_id',$request->user()->company_id))->with(['lines','location'])->findOrFail((int)$receipt);
         $returned=SaleReturnLine::whereIn('sale_line_id',$sale->lines->pluck('id'))->selectRaw('sale_line_id, SUM(quantity) quantity')->groupBy('sale_line_id')->pluck('quantity','sale_line_id');
         return response()->json([
             'id'=>$sale->id, 'receipt'=>'SALE-'.$sale->id, 'customer'=>$sale->customer,
@@ -48,12 +48,14 @@ class ReturnController extends Controller
             'lines'=>'required|array|min:1|max:100', 'lines.*.sale_line_id'=>'required|integer|distinct',
             'lines.*.quantity'=>'nullable|integer|min:0|max:1000000', 'lines.*.barcode'=>'nullable|string|max:100',
         ]);
+        abort_unless(Sale::whereKey($data['sale_id'])->whereHas('location',fn($q)=>$q->where('company_id',$request->user()->company_id))->exists(),404);
         $return=$service->post($data,$request->user()->id);
         return redirect()->route('safety-shop.returns.show',$return)->with('success','Customer return posted and stock restored.');
     }
 
-    public function show(SaleReturn $return)
+    public function show(Request $request,SaleReturn $return)
     {
+        abort_unless((int)$return->location()->value('company_id')===(int)$request->user()->company_id,404);
         $return->load(['sale','location','creator','lines.saleLine']);
         return view('safety-shop.returns.show',compact('return'));
     }

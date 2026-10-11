@@ -3,7 +3,7 @@
 use App\Modules\DocumentLibrary\Http\Controllers\DocumentLibraryController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth', 'active', 'auth.session', \App\Http\Middleware\EnsureDocumentLibraryEnabled::class])
+Route::middleware(['auth', 'active', 'auth.session', 'saas.subscription', 'operational', \App\Http\Middleware\EnsureDocumentLibraryEnabled::class])
     ->prefix('document-library')->name('document-library.')->group(function () {
         Route::get('/', [DocumentLibraryController::class, 'index'])->name('index');
         Route::get('/create', [DocumentLibraryController::class, 'create'])->name('create');

@@ -16,11 +16,11 @@ class MasterController extends Controller
     public function index(Request $r)
     {
         $type=$this->type; $directory=self::DIRECTORIES[$type];
-        $masters=Master::where('type',$type)->orderBy('name')->paginate(20)->withQueryString();
+        $masters=Master::where('company_id',$r->user()->company_id)->where('type',$type)->orderBy('name')->paginate(20)->withQueryString();
         return view('safety-shop.shared.master-directory',compact('masters','type','directory'));
     }
     public function create() { return $this->form(new Master(['type'=>$this->type,'is_active'=>true])); }
-    public function edit(Master $master) { abort_unless($master->type===$this->type,404); return $this->form($master); }
+    public function edit(Master $master) { abort_unless($master->type===$this->type && (int)$master->company_id===(int)auth()->user()->company_id,404); return $this->form($master); }
     private function form(Master $editing)
     {
         $type=$this->type; $directory=self::DIRECTORIES[$type];
@@ -30,7 +30,8 @@ class MasterController extends Controller
     {
         $r->merge(['type'=>$this->type]);
         if ($this->type === 'category') $r->merge(['sku_prefix'=>strtoupper(trim((string)$r->input('sku_prefix')))]);
-        $companyId=optional($master)->company_id ?: $r->input('company_id') ?: \App\Models\Company::where('is_active',true)->orderBy('id')->value('id');
+        if($master) abort_unless((int)$master->company_id===(int)$r->user()->company_id,404);
+        $companyId=(int)$r->user()->company_id;
         $r->merge(['company_id'=>$companyId]);
         $data=$r->validate([
             'company_id'=>'required|integer|exists:companies,id',

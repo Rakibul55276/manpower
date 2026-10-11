@@ -10,7 +10,7 @@ class Access
         $query = Employee::query();
         $user = auth()->user();
         if (!$user->isSuperAdmin()) $query->where('company_id', $user->company_id);
-        if ($user->isManager()) $query->where('branch_id', $user->branch_id);
+        if ($user->isBranchUser()) $query->where('branch_id', $user->branch_id);
         return $query;
     }
     public static function companies()
@@ -24,7 +24,7 @@ class Access
         $query = Branch::query();
         if ($user->isSuperAdmin()) { if ($companyId) $query->where('company_id', $companyId); return $query; }
         $query->where('company_id', $user->company_id);
-        if ($user->isManager()) $query->whereKey($user->branch_id);
+        if ($user->isBranchUser()) $query->whereKey($user->branch_id);
         return $query;
     }
     public static function employee(Employee $employee) { abort_unless(auth()->user()->canAccessCompany($employee->company_id) && auth()->user()->canAccessBranch($employee->branch_id), 403); }

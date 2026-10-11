@@ -11,4 +11,5 @@ class Branch extends Model
     public function company() { return $this->belongsTo(Company::class); }
     public function employees() { return $this->hasMany(Employee::class); }
     public function managers() { return $this->hasMany(User::class)->where('role', 'manager'); }
+    public function issuers() { return $this->hasMany(User::class)->where('role', 'issuer'); }
 }

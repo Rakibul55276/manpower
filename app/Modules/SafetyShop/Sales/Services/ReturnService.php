@@ -10,6 +10,7 @@ use App\Modules\SafetyShop\Stock\Services\InventoryService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use App\Models\User;
 
 class ReturnService
 {
@@ -22,6 +23,8 @@ class ReturnService
 
             $sale = Sale::whereKey($data['sale_id'])->lockForUpdate()->firstOrFail();
             $companyId=(int)$sale->location()->value('company_id');
+            $actor=User::findOrFail($userId);
+            if(!$actor->isCompanyAdmin() || (int)$actor->company_id!==$companyId) $this->fail('sale_id','Select a receipt belonging to your company.');
             $requested = collect($data['lines'])->filter(fn ($line) => (int)($line['quantity'] ?? 0) > 0)->keyBy('sale_line_id');
             if ($requested->isEmpty()) $this->fail('lines', 'Select at least one item and enter its return quantity.');
 

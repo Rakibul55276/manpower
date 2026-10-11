@@ -26,7 +26,7 @@ class SaasVoucherService
 
     public function redeem(Company $company, string $code, User $user): SaasVoucherRedemption
     {
-        return DB::transaction(function () use ($company, $code, $user) {
+        return DB::connection(TenantDatabase::active() ? 'central' : config('database.default'))->transaction(function () use ($company, $code, $user) {
             $company = Company::whereKey($company->id)->lockForUpdate()->firstOrFail();
             $voucher = SaasVoucher::where('code_hash', hash('sha256', $this->normalize($code)))->lockForUpdate()->first();
             if (!$voucher || $voucher->status !== 'unused') $this->fail('voucher', 'Voucher is invalid or has already been used.');
@@ -45,10 +45,13 @@ class SaasVoucherService
                 'subscription_grace_until'=>$expiry->copy()->addDays(max(0, (int)config('saas.grace_days', 7))),
             ]);
             $voucher->update(['status'=>'redeemed', 'redeemed_company_id'=>$company->id, 'redeemed_at'=>now()]);
-            return SaasVoucherRedemption::create([
-                'voucher_id'=>$voucher->id, 'company_id'=>$company->id, 'redeemed_by'=>$user->id,
+            $redemption=[
+                'voucher_id'=>$voucher->id, 'company_id'=>$company->id,
+                'redeemed_by_name'=>$user->name, 'redeemed_by_username'=>$user->username,
                 'previous_expiry'=>$previous, 'new_expiry'=>$expiry, 'redeemed_at'=>now(),
-            ]);
+            ];
+            if (\Illuminate\Support\Facades\Schema::connection(SaasVoucherRedemption::make()->getConnectionName())->hasColumn('saas_voucher_redemptions','redeemed_by')) $redemption['redeemed_by']=$user->id;
+            return SaasVoucherRedemption::create($redemption);
         }, 3);
     }
 

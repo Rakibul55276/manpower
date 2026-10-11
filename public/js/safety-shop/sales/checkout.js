@@ -181,8 +181,13 @@
             const response = await fetch(url, {headers: {'Accept': 'application/json'}, credentials: 'same-origin'});
             if (!response.ok) throw new Error(response.status === 404 ? 'Barcode not found or product inactive.' : 'Unable to load this barcode. Check your session and location.');
             const item = await response.json();
+            const preview = document.getElementById('checkout-product-preview');
+            document.getElementById('checkout-preview-name').textContent = item.name;
+            document.getElementById('checkout-preview-meta').textContent = `SKU ${item.sku} · Barcode ${item.barcode} · ${money(item.price_cents)} SAR / ${item.unit}`;
+            document.getElementById('checkout-preview-stock').textContent = `${item.available} ${item.unit} available at this checkout location.`;
+            preview.hidden = false;
             const previous = cart.get(item.id); const quantity = previous ? previous.quantity + 1 : 1;
-            if (quantity > item.available || quantity > 1000000) throw new Error('Insufficient stock at this location.');
+            if (quantity > item.available || quantity > 1000000) throw new Error(`${item.name} was found, but there is no available stock at this checkout location. Transfer or receive stock here before selling.`);
             if (!previous && cart.size >= 100) throw new Error('A checkout supports at most 100 products.');
             cart.set(item.id, {...item, quantity}); render(); barcode.value = '';
             message.textContent = `${item.name} added. ${quantity} ${item.unit} in cart.`;

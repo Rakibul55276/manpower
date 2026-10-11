@@ -17,7 +17,7 @@ class PayrollController extends Controller
     private function workforce() { return request()->route('workforce') ?? 'rental'; }
     private function prefix() { return $this->workforce() === 'own' ? 'salaries' : 'payrolls'; }
     private function check(Payroll $payroll) { Access::company($payroll->company_id); Access::branch($payroll->branch_id, $payroll->company_id); abort_unless($payroll->employment_type === $this->workforce(), 404); }
-    private function scopedPayrolls() { $q=Payroll::query(); $u=auth()->user(); if(!$u->isSuperAdmin())$q->where('company_id',$u->company_id); if($u->isManager())$q->where('branch_id',$u->branch_id); return $q; }
+    private function scopedPayrolls() { $q=Payroll::query(); $u=auth()->user(); if(!$u->isSuperAdmin())$q->where('company_id',$u->company_id); if($u->isBranchUser())$q->where('branch_id',$u->branch_id); return $q; }
     public function index(Request $request)
     {
         $request->validate(['month' => 'nullable|date_format:Y-m', 'status' => 'nullable|in:pending,approved,paid', 'company_id' => 'nullable|integer', 'search' => 'nullable|string|max:100']);
@@ -128,13 +128,13 @@ class PayrollController extends Controller
         $data = $request->validate(['allowance' => ['required', 'numeric', 'min:0', 'max:999999.99', 'regex:/^\d+(\.\d{1,2})?$/'], 'deduction' => ['required', 'numeric', 'min:0', 'max:999999.99', 'regex:/^\d+(\.\d{1,2})?$/'], 'notes' => 'nullable|string|max:2000']);
         DB::transaction(function () use ($payroll, $data) {
             $record = Payroll::lockForUpdate()->findOrFail($payroll->id);
-            abort_unless($record->status === 'pending', 403, 'Only pending salaries can be adjusted.');
+            $previousStatus=$record->status;
             $allowance = Pay::units($data['allowance']); $deduction = Pay::units($data['deduction']);
             $gross = $record->regular_pay_cents + $record->overtime_pay_cents + $allowance + $record->meal_allowance_cents + $record->transportation_allowance_cents + $record->housing_allowance_cents + $record->medical_allowance_cents;
             $totalDeductions = $deduction + $record->advance_deduction_cents + $record->retirement_insurance_cents + $record->tax_cents;
             if ($totalDeductions > $gross) { throw ValidationException::withMessages(['deduction' => 'Total deductions cannot exceed gross pay.']); }
-            $record->update(['allowance_cents' => $allowance, 'deduction_cents' => $deduction, 'net_pay_cents' => $gross - $totalDeductions,'employee_cost_cents'=>$gross,'margin_cents'=>$record->po_revenue_cents-$gross-$record->company_cost_cents, 'notes' => $data['notes'] ?? null]);
-            ActivityLog::record('Adjusted salary', 'Payslip #'.$record->id);
+            $record->update(['allowance_cents' => $allowance, 'deduction_cents' => $deduction, 'net_pay_cents' => $gross - $totalDeductions,'employee_cost_cents'=>$gross,'margin_cents'=>$record->po_revenue_cents-$gross-$record->company_cost_cents, 'notes' => $data['notes'] ?? null,'status'=>'pending','approved_by'=>null,'approved_at'=>null,'paid_by'=>null,'paid_at'=>null]);
+            ActivityLog::record('Adjusted and reopened salary', 'Payslip #'.$record->id.' · Previous status '.$previousStatus);
         });
         return back()->with('success', 'Salary adjustments saved.');
     }
@@ -180,11 +180,11 @@ class PayrollController extends Controller
         $this->check($payroll);
         DB::transaction(function () use ($payroll) {
             Employee::lockForUpdate()->findOrFail($payroll->employee_id);
-            $record = Payroll::lockForUpdate()->findOrFail($payroll->id); abort_unless($record->status === 'pending', 403, 'Only pending salaries can be voided.');
+            $record = Payroll::lockForUpdate()->findOrFail($payroll->id); $previousStatus=$record->status;
             $record->timesheets()->update(['payroll_id' => null]); $record->delete();
-            ActivityLog::record('Voided draft salary', 'Payslip #'.$record->id.' · '.$record->employee_name);
+            ActivityLog::record('Deleted salary', 'Payslip #'.$record->id.' · '.$record->employee_name.' · Previous status '.$previousStatus);
         });
-        return redirect()->route($this->prefix().'.index')->with('success', 'Draft voided. Timesheet entry for this month is unlocked.');
+        return redirect()->route($this->prefix().'.index')->with('success', 'Salary deleted. Linked timesheet entries are unlocked and advance allocations were reversed.');
     }
     public function export(Request $request)
     {

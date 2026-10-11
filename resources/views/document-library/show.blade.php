@@ -14,5 +14,5 @@
 <div><dt>Uploaded by</dt><dd>{{ $document->uploader->name }} on {{ $document->created_at->format('d M Y H:i') }}</dd></div>
 <div><dt>Notes</dt><dd>{{ $document->notes ?: '—' }}</dd></div>
 </dl></div></div>
-@if(auth()->user()->isAdmin())<div class="card"><div class="card-body"><h3>Administrative action</h3><p class="description">Deleting removes the database record and private stored file. This action is logged. Managers cannot delete documents.</p><form method="POST" action="{{ route('document-library.destroy',$document) }}" onsubmit="return confirm('Delete this document permanently?')">@csrf @method('DELETE')<button class="btn danger">Delete document</button></form></div></div>@endif
+@if(auth()->user()->isCompanyAdmin())<div class="card"><div class="card-body"><h3>Administrative action</h3><p class="description">Deleting removes the database record and private stored file. This action is logged.</p><form method="POST" action="{{ route('document-library.destroy',$document) }}" onsubmit="return confirm('Delete this document permanently?')">@csrf @method('DELETE')<button class="btn danger">Delete document</button></form></div></div>@endif
 @endsection

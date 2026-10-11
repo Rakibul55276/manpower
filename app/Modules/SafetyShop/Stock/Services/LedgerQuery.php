@@ -9,7 +9,7 @@ class LedgerQuery
     public function build(Request $r)
     {
         $r->validate(['type'=>'nullable|in:receipt,issue,return,adjustment,transfer','from'=>'nullable|date_format:Y-m-d','to'=>array_filter(['nullable','date_format:Y-m-d',$r->filled('from')?'after_or_equal:from':null]),'product_id'=>'nullable|integer','location_id'=>'nullable|integer']);
-        $q=Movement::with(['product','location','destination','supplier','creator']);
+        $q=Movement::where('company_id',$r->user()->company_id)->with(['product','location','destination','supplier','creator']);
         if ($r->filled('type')) $q->where('type',$r->type);
         if ($r->filled('from')) $q->whereDate('movement_date','>=',$r->from);
         if ($r->filled('to')) $q->whereDate('movement_date','<=',$r->to);

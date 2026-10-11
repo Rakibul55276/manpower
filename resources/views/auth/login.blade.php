@@ -22,13 +22,14 @@
         <div class="login-form">
             <div class="eyebrow">Welcome back</div>
             <h1>Sign in to your workspace</h1>
-            <p class="description">Use your Super Admin or Manager account.</p>
+            <p class="description">Enter your company code and company account.</p>
             @if($errors->any())<div class="notice error" style="margin-top:22px" role="alert">{{ $errors->first() }}</div>@endif
             <form method="POST" action="{{ route('login.submit') }}">
                 @csrf
+                <div class="field"><label for="company_code">Company code</label><input id="company_code" name="company_code" type="text" value="{{ old('company_code') }}" required autofocus autocomplete="organization" placeholder="ACME" maxlength="30" style="text-transform:uppercase"></div>
                 <div class="field">
                     <label for="username">Username</label>
-                    <input id="username" name="username" type="text" value="{{ old('username') }}" required autofocus autocomplete="username" placeholder="admin or manager">
+                    <input id="username" name="username" type="text" value="{{ old('username') }}" required autocomplete="username" placeholder="admin, manager, or issuer">
                 </div>
                 <div class="field">
                     <label for="password">Password</label>

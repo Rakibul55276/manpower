@@ -5,6 +5,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class SaasVoucher extends Model
 {
+    public function getConnectionName() { return \App\Services\TenantDatabase::active() ? 'central' : parent::getConnectionName(); }
     protected $guarded = [];
     protected $casts = ['valid_until'=>'date', 'redeemed_at'=>'datetime'];
     public function assignedCompany() { return $this->belongsTo(Company::class, 'assigned_company_id'); }

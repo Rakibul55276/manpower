@@ -16,7 +16,7 @@ class SaasVoucherController extends Controller
         abort_unless(config('saas.saas_voucher_enabled'), 404);
         $companies=Company::orderBy('name')->get();
         $vouchers=SaasVoucher::with(['assignedCompany','redeemedCompany','creator'])->latest()->paginate(25);
-        $redemptions=SaasVoucherRedemption::with(['company','voucher','redeemer'])->latest('redeemed_at')->limit(50)->get();
+        $redemptions=SaasVoucherRedemption::with(['company','voucher'])->latest('redeemed_at')->limit(50)->get();
         return view('saas.platform', compact('companies','vouchers','redemptions'));
     }
     public function store(Request $request, SaasVoucherService $service)
