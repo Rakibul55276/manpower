@@ -84,7 +84,7 @@ class DashboardController extends Controller
                 'customers'=>SafetyShopCustomer::where('is_active',true)->count(),
             ];
         }
-        if(config('safety_shop.enabled') && $request->user()->isCompanyAdmin()){
+        if(config('safety_shop.enabled') && $request->user()->canApprove() && !$request->user()->isSuperAdmin()){
             $companyId=$request->user()->company_id;
             $financial=app(FinancialReport::class)->build(['from'=>$monthStart,'to'=>$monthEnd,'company_id'=>$companyId]);
             $inventory=[

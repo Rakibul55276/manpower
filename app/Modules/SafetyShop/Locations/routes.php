@@ -7,4 +7,5 @@ Route::prefix('locations')->name('locations.')->group(function () {
     Route::get('/{master}/edit',[LocationController::class,'edit'])->middleware('approver')->name('edit');
     Route::post('/',[LocationController::class,'saveMaster'])->middleware('approver')->name('store');
     Route::put('/{master}',[LocationController::class,'saveMaster'])->middleware('approver')->name('update');
+    Route::delete('/{master}',[LocationController::class,'destroy'])->middleware('approver')->name('destroy');
 });

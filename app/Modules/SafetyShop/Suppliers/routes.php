@@ -7,4 +7,5 @@ Route::prefix('suppliers')->name('suppliers.')->group(function () {
     Route::get('/{master}/edit',[SupplierController::class,'edit'])->middleware('approver')->name('edit');
     Route::post('/',[SupplierController::class,'saveMaster'])->middleware('approver')->name('store');
     Route::put('/{master}',[SupplierController::class,'saveMaster'])->middleware('approver')->name('update');
+    Route::delete('/{master}',[SupplierController::class,'destroy'])->middleware('approver')->name('destroy');
 });

@@ -4,7 +4,7 @@ use Illuminate\Database\Eloquent\Model;
 class Company extends Model
 {
     public function getConnectionName() { return \App\Services\TenantDatabase::active() ? 'central' : parent::getConnectionName(); }
-    protected $fillable = ['name', 'logo_path', 'company_code', 'location', 'registration_number', 'contact_person', 'phone', 'email', 'address', 'notes', 'is_active', 'subscription_status', 'subscription_started_at', 'subscription_expires_at', 'subscription_grace_until', 'db_host', 'db_port', 'db_name', 'db_username', 'db_password_encrypted', 'db_verified_at'];
+    protected $fillable = ['name', 'name_ar', 'logo_path', 'company_code', 'location', 'registration_number', 'contact_person', 'phone', 'email', 'address', 'notes', 'is_active', 'subscription_status', 'subscription_started_at', 'subscription_expires_at', 'subscription_grace_until', 'db_host', 'db_port', 'db_name', 'db_username', 'db_password_encrypted', 'db_verified_at'];
     protected $hidden = ['db_password_encrypted'];
     protected $casts = ['is_active' => 'boolean', 'subscription_started_at'=>'date', 'subscription_expires_at'=>'date', 'subscription_grace_until'=>'date', 'db_verified_at'=>'datetime'];
     public function employees() { return $this->hasMany(Employee::class); }

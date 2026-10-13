@@ -4,6 +4,7 @@
 @section('content')
 <div class="card"><div class="card-head"><h2>{{ $item->name }}</h2></div><div class="card-body"><form method="POST" action="{{ route($type.'.update', $item->id) }}" @if($type==='companies') enctype="multipart/form-data" @endif>@csrf @method('PUT')
 <div class="form-grid"><div class="field"><label>Name *</label><input name="name" value="{{ old('name', $item->name) }}" required maxlength="150"></div>
+@if($type === 'companies')<div class="field"><label>Company name — Arabic</label><input name="name_ar" dir="rtl" maxlength="150" value="{{ old('name_ar', $item->name_ar) }}" placeholder="اسم الشركة"></div>@endif
 @if($type === 'companies')
 <div class="field"><label>Company logo</label>@if($item->logo_path)<img src="{{ route('companies.logo',$item) }}" alt="{{ $item->name }} logo" style="display:block;max-width:180px;max-height:90px;object-fit:contain;margin:0 0 10px"><label style="font-weight:400"><input type="checkbox" name="remove_logo" value="1"> Remove current logo</label>@endif<input type="file" name="logo" accept="image/jpeg,image/png,image/webp"><span class="help">Uploading a new logo replaces the current one. Maximum 2 MB.</span></div>
 @if(config('saas.saas_voucher_enabled'))<div class="field"><label>Company code *</label><input name="company_code" value="{{ old('company_code', $item->company_code) }}" required maxlength="30" style="text-transform:uppercase"></div>@endif

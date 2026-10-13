@@ -7,4 +7,5 @@ Route::prefix('categories')->name('categories.')->group(function () {
     Route::get('/{master}/edit',[CategoryController::class,'edit'])->middleware('approver')->name('edit');
     Route::post('/',[CategoryController::class,'saveMaster'])->middleware('approver')->name('store');
     Route::put('/{master}',[CategoryController::class,'saveMaster'])->middleware('approver')->name('update');
+    Route::delete('/{master}',[CategoryController::class,'destroy'])->middleware('approver')->name('destroy');
 });

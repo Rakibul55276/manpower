@@ -1,13 +1,13 @@
 @extends('layouts.app')
 @section('title','Process customer return')
-@section('eyebrow','Safety shop · Receipt-linked return')
-@section('description','Scan or enter the original receipt, verify returned products, and restore stock with a complete audit trail.')
+@section('eyebrow','Safety shop · Invoice-linked return')
+@section('description','Scan or enter the original invoice, verify returned products, and restore stock with a complete audit trail.')
 @section('content')
 @include('safety-shop.shared.nav')
 <div class="card"><div class="card-body">
 <div class="form-grid">
-<div class="field"><label for="return-receipt">Original receipt number *</label><input id="return-receipt" placeholder="Scan or enter SALE-123" autocomplete="off"><small>The receipt identifies the customer, location, and products sold.</small></div>
-<div class="field"><label>&nbsp;</label><button class="btn" id="return-lookup" type="button">Find receipt</button></div>
+<div class="field"><label for="return-receipt">Original invoice number *</label><input id="return-receipt" placeholder="Scan or enter INV-A7K9M2Q4" autocomplete="off"><small>The invoice identifies the customer, location, and products sold.</small></div>
+<div class="field"><label>&nbsp;</label><button class="btn" id="return-lookup" type="button">Find invoice</button></div>
 </div>
 <div id="return-message" class="notice error" role="alert" hidden></div>
 </div></div>

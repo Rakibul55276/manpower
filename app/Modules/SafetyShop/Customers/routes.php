@@ -9,5 +9,6 @@ Route::prefix('customers')->name('customers.')->group(function(){
         Route::get('/{customer}/edit',[CustomerController::class,'edit'])->name('edit');
         Route::put('/{customer}',[CustomerController::class,'update'])->name('update');
         Route::post('/{customer}/approve',[CustomerController::class,'approve'])->name('approve');
+        Route::delete('/{customer}',[CustomerController::class,'destroy'])->name('destroy');
     });
 });

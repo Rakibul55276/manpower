@@ -29,8 +29,9 @@ Route::middleware(['auth', 'active', 'auth.session', 'saas.subscription'])->grou
     Route::post('/logout', [\App\Http\Controllers\AuthController::class, 'logout'])->name('logout');
     Route::get('/profile', [\App\Http\Controllers\AuthController::class, 'profile'])->name('profile');
     Route::put('/profile/password', [\App\Http\Controllers\AuthController::class, 'password'])->name('profile.password');
-    Route::get('/employee-photos/{employee}', [\App\Http\Controllers\EmployeeController::class, 'photo'])->middleware('operational')->name('employees.photo');
     Route::get('/company-logos/{company}', [\App\Http\Controllers\LookupController::class, 'logo'])->name('companies.logo');
+    Route::middleware(\App\Http\Middleware\EnsureManpowerEnabled::class)->group(function () {
+    Route::get('/employee-photos/{employee}', [\App\Http\Controllers\EmployeeController::class, 'photo'])->middleware('operational')->name('employees.photo');
     Route::post('/employees/{employee}/advances', [\App\Http\Controllers\EmployeeAdvanceController::class, 'store'])->middleware('operational')->name('employees.advances.store');
     foreach (['rental' => 'employees', 'own' => 'own-employees'] as $workforce => $prefix) {
         $controller = \App\Http\Controllers\EmployeeController::class;
@@ -73,16 +74,17 @@ Route::middleware(['auth', 'active', 'auth.session', 'saas.subscription'])->grou
         Route::post('/'.$prefix.'/{payroll}/approve', [$controller, 'approve'])->middleware('approver')->defaults('workforce', $workforce)->name($prefix.'.approve');
         Route::delete('/'.$prefix.'/{payroll}', [$controller, 'destroy'])->middleware('company_admin')->defaults('workforce', $workforce)->name($prefix.'.destroy');
     }
-    Route::middleware('approver')->group(function () {
+    });
+    });
+    Route::middleware(['operational','approver'])->group(function () {
         Route::get('/audit-report', [\App\Http\Controllers\AuditReportController::class, 'index'])->name('audit.index');
         Route::get('/audit-report/export.csv', [\App\Http\Controllers\AuditReportController::class, 'csv'])->name('audit.csv');
         Route::get('/audit-report/export.pdf', [\App\Http\Controllers\AuditReportController::class, 'pdf'])->name('audit.pdf');
     });
-    });
     Route::prefix('company')->name('company-users.')->middleware('company_admin')->group(function () {
         Route::resource('team', \App\Http\Controllers\UserController::class)->except(['show'])->parameters(['team'=>'user'])->names(['index'=>'index','create'=>'create','store'=>'store','edit'=>'edit','update'=>'update','destroy'=>'destroy']);
     });
-    Route::prefix('company')->middleware(['company_admin','operational'])->group(function () {
+    Route::prefix('company')->middleware(['company_admin','operational',\App\Http\Middleware\EnsureManpowerEnabled::class])->group(function () {
         $controller=\App\Http\Controllers\LookupController::class;
         Route::get('/designations',[$controller,'index'])->defaults('lookup','designations')->name('designations.index');
         Route::get('/designations/create',[$controller,'create'])->defaults('lookup','designations')->name('designations.create');
@@ -90,10 +92,6 @@ Route::middleware(['auth', 'active', 'auth.session', 'saas.subscription'])->grou
         Route::get('/designations/{id}/edit',[$controller,'edit'])->defaults('lookup','designations')->name('designations.edit');
         Route::put('/designations/{id}',[$controller,'update'])->defaults('lookup','designations')->name('designations.update');
         Route::delete('/designations/{id}',[$controller,'destroy'])->defaults('lookup','designations')->name('designations.destroy');
-    });
-    Route::middleware(['company_admin','operational'])->group(function () {
-        Route::get('/company-branding', [\App\Modules\SafetyShop\Shared\Http\Controllers\ReceiptSettingController::class, 'edit'])->name('document-branding.edit');
-        Route::put('/company-branding', [\App\Modules\SafetyShop\Shared\Http\Controllers\ReceiptSettingController::class, 'update'])->name('document-branding.update');
     });
     Route::prefix('superadmin')->middleware('super_admin')->group(function () {
         Route::post('/logout', [\App\Http\Controllers\SuperAdminAuthController::class, 'logout'])->name('superadmin.logout');
@@ -142,3 +140,4 @@ Route::middleware(['auth', 'active', 'auth.session', 'saas.subscription'])->grou
 
 require __DIR__.'/safety_shop.php';
 require __DIR__.'/document_library.php';
+require __DIR__.'/commercial_documents.php';

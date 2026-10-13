@@ -98,6 +98,25 @@ class ProductController extends Controller
         return view('safety-shop.products.show',compact('product','movements'));
     }
 
+    public function destroy(Product $product)
+    {
+        $this->authorizeCompany($product);
+        abort_unless(auth()->user()->isCompanyAdmin(), 403);
+        $usedInTransactions = $product->movements()->exists()
+            || $product->stocks()->where('quantity', '<>', 0)->exists()
+            || DB::table('safety_shop_sale_lines')->where('product_id', $product->id)->exists()
+            || DB::table('commercial_document_lines')->where('product_id', $product->id)->exists();
+        if ($usedInTransactions) {
+            return back()->withErrors(['delete' => 'This product is used in transaction data. Delete its related sales, stock movements, quotations, and delivery-note transactions first, or set the product inactive to preserve the audit trail.']);
+        }
+        DB::transaction(function () use ($product) {
+            $product->stocks()->delete();
+            ActivityLog::record('Deleted unused safety shop product', $product->sku);
+            $product->delete();
+        });
+        return redirect()->route('safety-shop.products.index')->with('success', 'Unused product deleted.');
+    }
+
     private function authorizeCompany(Product $product): void { abort_unless((int)$product->company_id===(int)auth()->user()->company_id,404); }
 
 }

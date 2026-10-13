@@ -13,6 +13,7 @@ foreach (['brands'=>BrandController::class,'sizes'=>SizeController::class,'units
             Route::get('/{master}/edit',[$controller,'edit'])->name('edit');
             Route::post('/',[$controller,'saveMaster'])->name('store');
             Route::put('/{master}',[$controller,'saveMaster'])->name('update');
+            Route::delete('/{master}',[$controller,'destroy'])->name('destroy');
         });
     });
 }

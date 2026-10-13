@@ -61,6 +61,7 @@ class Kernel extends HttpKernel
         'super_admin' => \App\Http\Middleware\SuperAdmin::class,
         'approver' => \App\Http\Middleware\Approver::class,
         'company_admin' => \App\Http\Middleware\CompanyAdmin::class,
+        'shop_operator' => \App\Http\Middleware\SafetyShopOperator::class,
         'user_admin' => \App\Http\Middleware\UserAdministrator::class,
         'operational' => \App\Http\Middleware\EnsureOperationalAccess::class,
         'saas.subscription' => \App\Http\Middleware\EnsureSaasSubscription::class,

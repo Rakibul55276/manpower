@@ -563,6 +563,13 @@ class ManpowerTest extends TestCase
             ->assertOk()
             ->assertSee('New designation');
     }
+    public function test_superadmin_company_form_includes_arabic_name()
+    {
+        $this->actingAs($this->admin)->get(route('companies.create'))
+            ->assertOk()
+            ->assertSee('Company name — Arabic')
+            ->assertSee('name="name_ar"', false);
+    }
     public function test_authenticated_layout_has_collapsible_navigation()
     {
         $this->actingAs($this->manager)->get(route('dashboard'))

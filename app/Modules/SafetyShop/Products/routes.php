@@ -10,6 +10,7 @@ Route::prefix('products')->name('products.')->group(function () {
         Route::post('/',[ProductController::class,'store'])->name('store');
         Route::get('/{product}/edit',[ProductController::class,'edit'])->name('edit');
         Route::put('/{product}',[ProductController::class,'update'])->name('update');
+        Route::delete('/{product}',[ProductController::class,'destroy'])->name('destroy');
     });
     Route::get('/{product}',[ProductController::class,'show'])->whereNumber('product')->name('show');
 });

@@ -1,7 +1,7 @@
 @extends('layouts.app')
 @section('title', 'Audit & custom reports')
 @section('eyebrow', 'Company audit center')
-@section('description', 'Build one company-scoped report across Manpower, Safety Shop, payroll, stock, and system events.')
+@section('description', 'Build one company-scoped report across enabled modules and system events.')
 @section('actions')
 <a class="btn secondary" href="{{ route('audit.csv', $filters) }}">↓ Export CSV</a>
 <a class="btn" href="{{ route('audit.pdf', $filters) }}">↓ Export PDF</a>
@@ -9,18 +9,20 @@
 @section('content')
 <div class="grid-2" style="margin-bottom:22px">
     <a class="stat accent stat-link" href="#customize-report"><div class="label">Selected report</div><div class="value" style="font-size:22px">{{ $reportTitle }}</div><div class="note">{{ $filters['from'] }} through {{ $filters['to'] }} · Customize →</div></a>
-    <a class="stat stat-link" href="#report-results"><div class="label">Matching records</div><div class="value">{{ number_format($total) }}</div><div class="note">Filtered across {{ empty($filters['employment_type']) ? 'both employee types' : $filters['employment_type'].' employees' }} · View results →</div></a>
+    <a class="stat stat-link" href="#report-results"><div class="label">Matching records</div><div class="value">{{ number_format($total) }}</div><div class="note">@if(config('manpower.enabled'))Filtered across {{ empty($filters['employment_type']) ? 'both employee types' : $filters['employment_type'].' employees' }} · @endif View results →</div></a>
 </div>
 <div class="card" id="customize-report">
-    <div class="card-head"><h2>Customize report</h2><span class="badge">Manpower & Safety Shop</span></div>
+    <div class="card-head"><h2>Customize report</h2><span class="badge">Enabled modules</span></div>
     <form method="GET" action="{{ route('audit.index') }}">
         <div class="filters">
             <div class="field"><label for="report">Report type</label><select id="report" name="report">
                 <option value="activity" {{ $filters['report'] === 'activity' ? 'selected' : '' }}>Activity trail</option>
+                @if(config('manpower.enabled'))
                 <option value="employees" {{ $filters['report'] === 'employees' ? 'selected' : '' }}>Employee details</option>
                 <option value="timesheets" {{ $filters['report'] === 'timesheets' ? 'selected' : '' }}>Timesheet & attendance</option>
                 <option value="salaries" {{ $filters['report'] === 'salaries' ? 'selected' : '' }}>Salary details</option>
-                @if(auth()->user()->isCompanyAdmin())
+                @endif
+                @if(config('safety_shop.enabled') && auth()->user()->isCompanyAdmin())
                 <option value="shop_sales" {{ $filters['report'] === 'shop_sales' ? 'selected' : '' }}>Safety Shop sales</option>
                 <option value="shop_returns" {{ $filters['report'] === 'shop_returns' ? 'selected' : '' }}>Safety Shop returns</option>
                 <option value="stock_movements" {{ $filters['report'] === 'stock_movements' ? 'selected' : '' }}>Safety Shop stock movements</option>
@@ -28,7 +30,7 @@
             </select></div>
             <div class="field"><label for="from">From</label><input id="from" type="date" name="from" value="{{ $filters['from'] }}" required></div>
             <div class="field"><label for="to">To</label><input id="to" type="date" name="to" value="{{ $filters['to'] }}" required></div>
-            <div class="field"><label for="employment_type">Employee type</label><select id="employment_type" name="employment_type"><option value="">Both types</option><option value="rental" {{ ($filters['employment_type'] ?? '') === 'rental' ? 'selected' : '' }}>Rental employee</option><option value="own" {{ ($filters['employment_type'] ?? '') === 'own' ? 'selected' : '' }}>Own employee</option></select></div>
+            @if(config('manpower.enabled'))<div class="field"><label for="employment_type">Employee type</label><select id="employment_type" name="employment_type"><option value="">Both types</option><option value="rental" {{ ($filters['employment_type'] ?? '') === 'rental' ? 'selected' : '' }}>Rental employee</option><option value="own" {{ ($filters['employment_type'] ?? '') === 'own' ? 'selected' : '' }}>Own employee</option></select></div>@endif
             <div class="field"><label for="company_id">Company</label><select id="company_id" name="company_id"><option value="">All companies</option>@foreach($companies as $company)<option value="{{ $company->id }}" {{ ($filters['company_id'] ?? '') == $company->id ? 'selected' : '' }}>{{ $company->name }}</option>@endforeach</select></div>
             @if($locations->isNotEmpty())<div class="field"><label for="location_id">Shop location</label><select id="location_id" name="location_id"><option value="">All shop locations</option>@foreach($locations as $location)<option value="{{ $location->id }}" {{ ($filters['location_id'] ?? '') == $location->id ? 'selected' : '' }}>{{ $location->name }}</option>@endforeach</select></div>@endif
             @if($employees->isNotEmpty())<div class="field"><label for="employee_id">Selected employee</label><select id="employee_id" name="employee_id"><option value="">All employees</option>@foreach($employees as $employee)<option value="{{ $employee->id }}" selected>{{ $employee->name }} · {{ ucfirst($employee->employment_type) }}</option>@endforeach</select></div>@endif

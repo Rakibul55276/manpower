@@ -19,12 +19,12 @@ class FinancialReport
     {
         [$from,$to]=$this->period($filters);
         $companyId=isset($filters['company_id'])?(int)$filters['company_id']:null;
-        $sales=Sale::whereBetween('created_at',[$from,$to]);
+        $sales=Sale::where('status','finalized')->whereBetween('created_at',[$from,$to]);
         $returns=SaleReturn::whereBetween('created_at',[$from,$to]);
         if($companyId){$sales->whereHas('location',fn($q)=>$q->where('company_id',$companyId));$returns->whereHas('location',fn($q)=>$q->where('company_id',$companyId));}
         $saleTotals=(clone $sales)->selectRaw('COUNT(*) count, COALESCE(SUM(subtotal_cents),0) gross, COALESCE(SUM(discount_cents),0) discounts, COALESCE(SUM(taxable_cents),0) taxable, COALESCE(SUM(tax_cents),0) tax, COALESCE(SUM(total_cents),0) billed')->first();
         $returnTotals=(clone $returns)->selectRaw('COUNT(*) count, COALESCE(SUM(refund_cents),0) refunds, COALESCE(SUM(tax_refund_cents),0) tax_refunds, COALESCE(SUM(cost_reversal_cents),0) returned_cost')->first();
-        $cogsQuery=DB::table('safety_shop_sale_lines as lines')->join('safety_shop_sales as sales','sales.id','=','lines.sale_id')->whereBetween('sales.created_at',[$from,$to]);
+        $cogsQuery=DB::table('safety_shop_sale_lines as lines')->join('safety_shop_sales as sales','sales.id','=','lines.sale_id')->where('sales.status','finalized')->whereBetween('sales.created_at',[$from,$to]);
         if($companyId)$cogsQuery->join('safety_shop_masters as locations','locations.id','=','sales.location_id')->where('locations.company_id',$companyId);
         $cogs=(int)$cogsQuery->sum(DB::raw('lines.quantity * lines.cost_cents'));
         $netRevenue=(int)$saleTotals->taxable-((int)$returnTotals->refunds-(int)$returnTotals->tax_refunds);
@@ -45,7 +45,7 @@ class FinancialReport
 
     public function events($from,$to,$limit=null,$companyId=null)
     {
-        $salesQuery=Sale::with(['creator','location','lines'])->whereBetween('created_at',[$from,$to]);
+        $salesQuery=Sale::with(['creator','location','lines'])->where('status','finalized')->whereBetween('created_at',[$from,$to]);
         $returnsQuery=SaleReturn::with(['sale','creator','location'])->whereBetween('created_at',[$from,$to]);
         if($companyId){$salesQuery->whereHas('location',fn($q)=>$q->where('company_id',$companyId));$returnsQuery->whereHas('location',fn($q)=>$q->where('company_id',$companyId));}
         $sales=$salesQuery->get()->map(function($sale){
@@ -62,7 +62,7 @@ class FinancialReport
 
     private function trend($from,$to,$companyId=null)
     {
-        $salesQuery=Sale::whereBetween('created_at',[$from,$to]);$returnsQuery=SaleReturn::whereBetween('created_at',[$from,$to]);
+        $salesQuery=Sale::where('status','finalized')->whereBetween('created_at',[$from,$to]);$returnsQuery=SaleReturn::whereBetween('created_at',[$from,$to]);
         if($companyId){$salesQuery->whereHas('location',fn($q)=>$q->where('company_id',$companyId));$returnsQuery->whereHas('location',fn($q)=>$q->where('company_id',$companyId));}
         $sales=$salesQuery->selectRaw('DATE(created_at) day, SUM(taxable_cents) revenue')->groupBy(DB::raw('DATE(created_at)'))->pluck('revenue','day');
         $returns=$returnsQuery->selectRaw('DATE(created_at) day, SUM(refund_cents-tax_refund_cents) refunds')->groupBy(DB::raw('DATE(created_at)'))->pluck('refunds','day');

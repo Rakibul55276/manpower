@@ -26,6 +26,8 @@ class AuditReportController extends Controller
     }
     private function report(Request $request) {
         $filters = $this->filters($request);
+        if (!config('manpower.enabled') && in_array($filters['report'], ['employees', 'timesheets', 'salaries'], true)) abort(404);
+        if (!config('safety_shop.enabled') && in_array($filters['report'], ['shop_sales', 'shop_returns', 'stock_movements'], true)) abort(404);
         if(in_array($filters['report'],['shop_sales','shop_returns','stock_movements'],true)) abort_unless(auth()->user()->isCompanyAdmin(),403);
         if ($filters['report'] === 'employees') {
             $query = Access::employees()->with(['company', 'designation'])->whereBetween('joined_on', [$filters['from'], $filters['to']]);

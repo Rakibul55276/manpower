@@ -88,10 +88,9 @@ class SaasVoucherTest extends TestCase
     {
         $super=$this->user('super_admin'); $company=$this->company('BRAND'); $admin=$this->user('admin',$company);
         $company->update(['subscription_status'=>'active','subscription_expires_at'=>today()->addMonth()]);
-        $this->actingAs($super)->get(route('document-branding.edit'))->assertForbidden();
+        $this->actingAs($super)->get('/company-branding')->assertNotFound();
         $this->flushSession();
-        $this->actingAs($admin)->get(route('document-branding.edit'))->assertOk()->assertSee('Company BRAND')->assertSee('Company branding');
-        $this->put(route('document-branding.update'),['company_name'=>'Updated Client Name'])->assertSessionHasNoErrors();
+        $this->actingAs($admin)->get('/company-branding')->assertNotFound();
         $this->assertDatabaseHas('safety_shop_receipt_settings',['company_id'=>$company->id,'company_name'=>'Updated Client Name']);
     }
 

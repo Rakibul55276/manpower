@@ -4,6 +4,7 @@
 @section('description',$product->sku.' · '.$product->unit)
 @section('actions')
 @if(auth()->user()->canApprove())<a class="btn secondary" href="{{ route('safety-shop.products.edit',$product) }}">Edit product</a>@if($product->is_active)<a class="btn" href="{{ route('safety-shop.stock.create',['product_id'=>$product->id]) }}">+ Stock movement</a>@endif
+@if(auth()->user()->isCompanyAdmin())<form method="POST" action="{{ route('safety-shop.products.destroy',$product) }}" onsubmit="return confirm('Delete this unused product? If it is used in a transaction, you must delete the related transaction data first.')">@csrf @method('DELETE')<button class="btn danger" type="submit">Delete product</button></form>@endif
 @endif
 @endsection
 @section('content')

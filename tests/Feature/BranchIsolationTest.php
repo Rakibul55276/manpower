@@ -6,6 +6,7 @@ use App\Modules\SafetyShop\Products\Models\Product;
 use App\Modules\SafetyShop\Sales\Models\Customer;
 use App\Modules\SafetyShop\Shared\Models\Master;
 use App\Modules\SafetyShop\Shared\Models\ReceiptSetting;
+use App\Modules\DocumentLibrary\Models\LibraryDocument;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
@@ -21,7 +22,7 @@ class BranchIsolationTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        config(['invoicing.enabled'=>true, 'safety_shop.enabled'=>true]);
+        config(['invoicing.enabled'=>true, 'safety_shop.enabled'=>true, 'manpower.enabled'=>true]);
         $this->company=Company::create(['name'=>'Tenant Alpha','location'=>'Riyadh']);
         $this->otherCompany=Company::create(['name'=>'Tenant Beta','location'=>'Jeddah']);
         $this->branch=Branch::create(['company_id'=>$this->company->id,'name'=>'North','code'=>'NORTH','location'=>'Riyadh','is_active'=>true]);
@@ -76,7 +77,7 @@ class BranchIsolationTest extends TestCase
         $this->assertSame('pending',$ownTime->fresh()->status);
     }
 
-    public function test_company_admin_gets_company_scoped_safety_shop_while_other_roles_are_blocked()
+    public function test_company_roles_get_company_scoped_safety_shop_without_cross_company_leakage()
     {
         $ownCategory=Master::create(['company_id'=>$this->company->id,'type'=>'category','name'=>'Alpha protection','sku_prefix'=>'ALPHA','is_active'=>true]);
         $foreignCategory=Master::create(['company_id'=>$this->otherCompany->id,'type'=>'category','name'=>'Beta private protection','sku_prefix'=>'BETA','is_active'=>true]);
@@ -91,7 +92,11 @@ class BranchIsolationTest extends TestCase
         $this->get(route('safety-shop.customers.index'))->assertOk()->assertDontSee('Beta private customer');
         $this->get(route('safety-shop.products.show',$foreignProduct))->assertNotFound();
         $this->get(route('safety-shop.categories.edit',$foreignCategory))->assertNotFound();
-        $this->flushSession()->actingAs($this->manager)->get(route('safety-shop.index'))->assertForbidden();
+        $this->flushSession()->actingAs($this->manager)->get(route('safety-shop.index'))->assertOk()->assertSee($ownProduct->name)->assertDontSee($foreignProduct->name);
+        $issuer=$this->user('shop_issuer','issuer',$this->company->id,$this->branch->id);
+        $this->flushSession()->actingAs($issuer)->get(route('safety-shop.index'))->assertOk()->assertSee($ownProduct->name)->assertDontSee($foreignProduct->name);
+        $this->get(route('safety-shop.stock.create'))->assertOk();
+        $this->get(route('safety-shop.reports.index'))->assertForbidden();
         $this->get(route('companies.branches.index',$this->company))->assertForbidden();
     }
 
@@ -102,8 +107,9 @@ class BranchIsolationTest extends TestCase
             $this->get(route('audit.index',['report'=>$report]))->assertOk();
         }
         $this->get(route('audit.csv',['report'=>'shop_sales']))->assertOk()->assertHeader('Content-Type','text/csv; charset=UTF-8');
-        $this->assertFalse(\Illuminate\Support\Facades\Route::has('safety-shop.reports.index'));
-        $this->flushSession()->actingAs($this->manager)->get(route('audit.index',['report'=>'shop_sales']))->assertForbidden();
+        $this->assertTrue(\Illuminate\Support\Facades\Route::has('safety-shop.reports.index'));
+        $this->flushSession()->actingAs($this->manager)->get(route('safety-shop.reports.index'))->assertOk();
+        $this->get(route('audit.index',['report'=>'shop_sales']))->assertForbidden();
     }
 
     public function test_system_owner_can_manage_platform_but_cannot_open_company_operations()
@@ -172,6 +178,18 @@ class BranchIsolationTest extends TestCase
         $this->assertDatabaseMissing('payrolls',['id'=>$payroll->id]);
     }
 
+    public function test_company_admin_can_manage_all_documents_in_own_company_only()
+    {
+        $own=LibraryDocument::create(['owner_id'=>$this->manager->id,'uploaded_by'=>$this->manager->id,'title'=>'Own company contract','original_name'=>'own.pdf','storage_path'=>'documents/own.pdf','mime_type'=>'application/pdf','size_bytes'=>100]);
+        $foreignOwner=$this->user('foreign_document_owner','manager',$this->otherCompany->id,$this->foreignBranch->id);
+        $foreign=LibraryDocument::create(['owner_id'=>$foreignOwner->id,'uploaded_by'=>$foreignOwner->id,'title'=>'Foreign private contract','original_name'=>'foreign.pdf','storage_path'=>'documents/foreign.pdf','mime_type'=>'application/pdf','size_bytes'=>100]);
+        $this->actingAs($this->admin)->get(route('document-library.index'))->assertOk()->assertSee($own->title)->assertDontSee($foreign->title);
+        $this->get(route('document-library.edit',$own))->assertOk();
+        $this->get(route('document-library.edit',$foreign))->assertForbidden();
+        $this->delete(route('document-library.destroy',$own))->assertSessionHasNoErrors();
+        $this->assertDatabaseMissing('document_library_files',['id'=>$own->id]);
+    }
+
     public function test_branch_allows_one_manager_and_multiple_issuers()
     {
         $admin=$this->admin;
@@ -195,22 +213,10 @@ class BranchIsolationTest extends TestCase
         $this->get(route('company-users.edit',$foreign))->assertForbidden();
     }
 
-    public function test_company_admin_can_upload_private_pdf_header_and_footer_images()
+    public function test_company_branding_screen_is_removed_in_favour_of_fixed_letterhead()
     {
-        $storageRoot=sys_get_temp_dir().DIRECTORY_SEPARATOR.'hr-letterhead-test-storage';
-        File::ensureDirectoryExists($storageRoot);
-        config(['filesystems.disks.local.root'=>$storageRoot]);
-        ReceiptSetting::create(['company_id'=>$this->company->id,'company_name'=>$this->company->name]);
-        $response=$this->actingAs($this->admin)->put(route('document-branding.update'),[
-            'company_name'=>$this->company->name,
-            'header_image'=>UploadedFile::fake()->image('header.png',1600,220),
-            'footer_image'=>UploadedFile::fake()->image('footer.png',1600,190),
-        ]);
-        $response->assertSessionHasNoErrors();
-        $settings=ReceiptSetting::forCompany($this->company->id)->firstOrFail();
-        Storage::disk('local')->assertExists($settings->header_image_path);
-        Storage::disk('local')->assertExists($settings->footer_image_path);
-        $this->assertStringStartsWith('data:image/png;base64,',\App\Services\Documents::brandingAsset($settings->header_image_path));
+        $this->actingAs($this->admin)->get('/company-branding')->assertNotFound();
+        $this->assertFileExists(config('documents.letterhead_pdf'));
     }
 
     public function test_employee_advance_is_tenant_scoped_and_deducted_from_payroll()
@@ -238,6 +244,23 @@ class BranchIsolationTest extends TestCase
         $base['branch_id']=$this->foreignBranch->id;
         $this->post(route('company-users.store'),$base)->assertSessionHasErrors('branch_id');
         $this->assertDatabaseMissing('users',['username'=>'duplicate']);
+    }
+
+    public function test_manpower_feature_flag_hides_and_blocks_the_module()
+    {
+        config(['manpower.enabled' => false]);
+
+        $this->actingAs($this->admin)->get(route('dashboard'))
+            ->assertOk()
+            ->assertDontSee('Rental manpower')
+            ->assertDontSee('Active workforce');
+        $this->get(route('employees.index'))->assertNotFound();
+        $this->get(route('timesheets.index'))->assertNotFound();
+        $this->get(route('payrolls.index'))->assertNotFound();
+        $this->get(route('designations.index'))->assertNotFound();
+        $this->get(route('audit.index', ['report' => 'employees']))->assertNotFound();
+        $this->get(route('audit.index', ['report' => 'activity']))->assertOk();
+        $this->get(route('safety-shop.index'))->assertOk();
     }
 
     private function user($username,$role,$companyId,$branchId){return User::create(['name'=>$username,'username'=>$username,'email'=>$username.'@test.local','password'=>Hash::make('StrongPass1!'),'role'=>$role,'company_id'=>$companyId,'branch_id'=>$branchId,'is_active'=>true]);}

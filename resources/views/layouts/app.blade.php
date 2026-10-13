@@ -1,7 +1,8 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>@yield('title', 'Dashboard') · Manpower</title><link rel="stylesheet" href="{{ asset('css/manpower.css') }}"><link rel="stylesheet" href="{{ asset('css/navigation.css') }}"><link rel="stylesheet" href="{{ asset('css/analytics.css') }}">@yield('head')<script defer src="{{ asset('js/manpower.js') }}"></script></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>@yield('title', 'Dashboard') · Manpower</title><link rel="icon" type="image/png" href="{{ asset('images/favicon.png') }}?v={{ filemtime(public_path('images/favicon.png')) }}"><link rel="stylesheet" href="{{ asset('css/manpower.css') }}"><link rel="stylesheet" href="{{ asset('css/navigation.css') }}"><link rel="stylesheet" href="{{ asset('css/analytics.css') }}">@yield('head')<script defer src="{{ asset('js/manpower.js') }}"></script></head>
 <body>
-<aside class="sidebar" id="sidebar"><a class="brand" href="{{ auth()->user()->isSuperAdmin() ? route('superadmin.index') : route('dashboard') }}"><span class="brand-mark">HE</span><span>Harbour Edge<small>{{ auth()->user()->isSuperAdmin() ? 'SYSTEM OWNER' : 'SAFETY SHOP &amp; OPERATIONS' }}</small></span></a>
+@php $workspaceBrand = auth()->user()->isSuperAdmin() ? null : \App\Services\Documents::branding(); $workspaceLogo = $workspaceBrand ? \App\Services\Documents::brandingLogo($workspaceBrand) : null; @endphp
+<aside class="sidebar" id="sidebar"><a class="brand" href="{{ auth()->user()->isSuperAdmin() ? route('superadmin.index') : route('dashboard') }}">@if($workspaceLogo)<span class="brand-mark" style="padding:3px;background:#fff"><img src="{{ $workspaceLogo }}" alt="{{ $workspaceBrand->company_name }} logo" style="width:100%;height:100%;object-fit:contain"></span>@else<span class="brand-mark">HE</span>@endif<span>{{ optional($workspaceBrand)->company_name ?: 'Harbour Edge' }}<small>{{ auth()->user()->isSuperAdmin() ? 'SYSTEM OWNER' : (optional($workspaceBrand)->tagline ?: 'SAFETY SHOP &amp; OPERATIONS') }}</small></span></a>
 <nav aria-label="Main navigation">
 @if(auth()->user()->isSuperAdmin())
 <button class="nav-label nav-section-toggle" type="button" data-nav-section-toggle="platform" aria-expanded="true" aria-controls="nav-section-platform"><span>Platform management</span><span class="nav-section-arrow" aria-hidden="true">⌄</span></button>
@@ -13,21 +14,17 @@
 @else
 <button class="nav-label nav-section-toggle" type="button" data-nav-section-toggle="workspace" aria-expanded="true" aria-controls="nav-section-workspace"><span>Workspace</span><span class="nav-section-arrow" aria-hidden="true">⌄</span></button>
 <div class="nav-section" id="nav-section-workspace" data-nav-section="workspace"><a class="nav-link {{ request()->routeIs('dashboard') ? 'active' : '' }}" href="{{ route('dashboard') }}"><span class="nav-icon">◫</span> Overview</a></div>
-@if(config('safety_shop.enabled') && auth()->user()->isCompanyAdmin())
+@if(config('safety_shop.enabled'))
 <button class="nav-label nav-section-toggle" type="button" data-nav-section-toggle="safety-shop" aria-expanded="true" aria-controls="nav-section-safety-shop"><span>Safety shop</span><span class="nav-section-arrow" aria-hidden="true">⌄</span></button>
 <div class="nav-section" id="nav-section-safety-shop" data-nav-section="safety-shop">
 <a class="nav-link {{ request()->routeIs('safety-shop.index')?'active':'' }}" href="{{ route('safety-shop.index') }}"><span class="nav-icon">⌂</span> Safety Shop home</a>
 <button class="nav-label nav-section-toggle nav-subgroup-toggle" type="button" data-nav-section-toggle="safety-shop-transactions" aria-expanded="true" aria-controls="nav-section-safety-shop-transactions"><span>Transactions</span><span class="nav-section-arrow" aria-hidden="true">⌄</span></button>
 <div class="nav-section nav-subgroup" id="nav-section-safety-shop-transactions" data-nav-section="safety-shop-transactions">
-<a class="nav-link {{ request()->routeIs('safety-shop.sales.index','safety-shop.sales.show')?'active':'' }}" href="{{ route('safety-shop.sales.index') }}"><span class="nav-icon">▤</span> Sales receipts</a>
+<a class="nav-link {{ request()->routeIs('safety-shop.sales.index','safety-shop.sales.show')?'active':'' }}" href="{{ route('safety-shop.sales.index') }}"><span class="nav-icon">▤</span> VAT invoices</a>
 <a class="nav-link {{ request()->routeIs('safety-shop.returns.*')?'active':'' }}" href="{{ route('safety-shop.returns.index') }}"><span class="nav-icon">↩</span> Customer returns</a>
-@if(auth()->user()->canApprove())
 <a class="nav-link {{ request()->routeIs('safety-shop.sales.create')?'active':'' }}" href="{{ route('safety-shop.sales.create') }}"><span class="nav-icon">▥</span> Barcode checkout</a>
-@endif
 <a class="nav-link {{ request()->routeIs('safety-shop.stock.index')?'active':'' }}" href="{{ route('safety-shop.stock.index') }}"><span class="nav-icon">⇄</span> Movement ledger</a>
-@if(auth()->user()->canApprove())
 <a class="nav-link {{ request()->routeIs('safety-shop.stock.create')?'active':'' }}" href="{{ route('safety-shop.stock.create') }}"><span class="nav-icon">＋</span> New stock movement</a>
-@endif
 </div>
 <button class="nav-label nav-section-toggle nav-subgroup-toggle" type="button" data-nav-section-toggle="safety-shop-masters" aria-expanded="true" aria-controls="nav-section-safety-shop-masters"><span>Master data</span><span class="nav-section-arrow" aria-hidden="true">⌄</span></button>
 <div class="nav-section nav-subgroup" id="nav-section-safety-shop-masters" data-nav-section="safety-shop-masters">
@@ -36,12 +33,23 @@
 <a class="nav-link {{ request()->routeIs('safety-shop.'.$feature.'.*')?'active':'' }}" href="{{ route('safety-shop.'.$feature.'.index') }}"><span class="nav-icon">◇</span> {{ $label }}</a>
 @endforeach
 </div>
+@if(auth()->user()->canApprove())
+<a class="nav-link {{ request()->routeIs('safety-shop.reports.*')?'active':'' }}" href="{{ route('safety-shop.reports.index') }}"><span class="nav-icon">≡</span> Shop analytics</a>
+@endif
+</div>
+@endif
+@if(config('commercial_documents.quotation_enabled') || config('commercial_documents.delivery_note_enabled'))
+<button class="nav-label nav-section-toggle" type="button" data-nav-section-toggle="commercial-documents" aria-expanded="true" aria-controls="nav-section-commercial-documents"><span>Commercial documents</span><span class="nav-section-arrow" aria-hidden="true">⌄</span></button>
+<div class="nav-section" id="nav-section-commercial-documents" data-nav-section="commercial-documents">
+@if(config('commercial_documents.quotation_enabled'))<a class="nav-link {{ request()->routeIs('quotations.*')?'active':'' }}" href="{{ route('quotations.index') }}"><span class="nav-icon">▤</span> Quotations</a>@endif
+@if(config('commercial_documents.delivery_note_enabled'))<a class="nav-link {{ request()->routeIs('delivery-notes.*')?'active':'' }}" href="{{ route('delivery-notes.index') }}"><span class="nav-icon">⇥</span> Delivery notes</a>@endif
 </div>
 @endif
 @if(config('document_library.enabled'))
 <button class="nav-label nav-section-toggle" type="button" data-nav-section-toggle="document-library" aria-expanded="true" aria-controls="nav-section-document-library"><span>Document library</span><span class="nav-section-arrow" aria-hidden="true">⌄</span></button>
 <div class="nav-section" id="nav-section-document-library" data-nav-section="document-library"><a class="nav-link {{ request()->routeIs('document-library.*')?'active':'' }}" href="{{ route('document-library.index') }}"><span class="nav-icon">▧</span> Scanned documents</a></div>
 @endif
+@if(config('manpower.enabled'))
 <button class="nav-label nav-section-toggle" type="button" data-nav-section-toggle="rental" aria-expanded="true" aria-controls="nav-section-rental"><span>Rental manpower</span><span class="nav-section-arrow" aria-hidden="true">⌄</span></button>
 <div class="nav-section" id="nav-section-rental" data-nav-section="rental">
 <a class="nav-link {{ request()->routeIs('employees.*') ? 'active' : '' }}" href="{{ route('employees.index') }}"><span class="nav-icon">♙</span> Rental employees</a>
@@ -54,6 +62,7 @@
 <a class="nav-link {{ request()->routeIs('attendance.*') ? 'active' : '' }}" href="{{ route('attendance.index') }}"><span class="nav-icon">◷</span> Attendance & overtime</a>
 <a class="nav-link {{ request()->routeIs('salaries.*') ? 'active' : '' }}" href="{{ route('salaries.index') }}"><span class="nav-icon">▤</span> Monthly salaries</a>
 </div>
+@endif
 @if(false)
 <button class="nav-label nav-section-toggle" type="button" data-nav-section-toggle="invoicing" aria-expanded="true" aria-controls="nav-section-invoicing"><span>Invoice system</span><span class="nav-section-arrow" aria-hidden="true">⌄</span></button>
 <div class="nav-section" id="nav-section-invoicing" data-nav-section="invoicing">
@@ -72,7 +81,12 @@
 @if(auth()->user()->isCompanyAdmin() || auth()->user()->canApprove())
 <button class="nav-label nav-section-toggle" type="button" data-nav-section-toggle="organization" aria-expanded="true" aria-controls="nav-section-organization"><span>Organization</span><span class="nav-section-arrow" aria-hidden="true">⌄</span></button>
 <div class="nav-section" id="nav-section-organization" data-nav-section="organization">
-@if(auth()->user()->isCompanyAdmin())<a class="nav-link {{ request()->routeIs('company-users.*') ? 'active' : '' }}" href="{{ route('company-users.index') }}"><span class="nav-icon">⚙</span> Branch team access</a><a class="nav-link {{ request()->routeIs('designations.*') ? 'active' : '' }}" href="{{ route('designations.index') }}"><span class="nav-icon">◇</span> Designations</a><a class="nav-link {{ request()->routeIs('document-branding.*') ? 'active' : '' }}" href="{{ route('document-branding.edit') }}"><span class="nav-icon">▣</span> Company branding</a>@endif
+@if(auth()->user()->isCompanyAdmin())
+<a class="nav-link {{ request()->routeIs('company-users.*') ? 'active' : '' }}" href="{{ route('company-users.index') }}"><span class="nav-icon">⚙</span> Branch team access</a>
+@if(config('manpower.enabled'))
+<a class="nav-link {{ request()->routeIs('designations.*') ? 'active' : '' }}" href="{{ route('designations.index') }}"><span class="nav-icon">◇</span> Designations</a>
+@endif
+@endif
 @if(auth()->user()->canApprove())
 <a class="nav-link {{ request()->routeIs('audit.*') ? 'active' : '' }}" href="{{ route('audit.index') }}"><span class="nav-icon">≡</span> Audit reports</a>
 @if(config('saas.saas_voucher_enabled') && auth()->user()->isSuperAdmin())<a class="nav-link {{ request()->routeIs('saas.*') ? 'active' : '' }}" href="{{ route('saas.vouchers.index') }}"><span class="nav-icon">◇</span> SaaS vouchers</a>@endif

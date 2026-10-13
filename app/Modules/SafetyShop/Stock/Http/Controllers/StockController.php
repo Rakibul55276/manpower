@@ -24,7 +24,7 @@ class StockController extends Controller
     public function create(Request $request)
     {
         $companyId=$this->companyId($request);
-        $products=Product::where('company_id',$companyId)->where('is_active',true)->orderBy('name')->get(); $locations=Master::where('company_id',$companyId)->where('type','location')->where('is_active',true)->orderBy('name')->get(); $suppliers=Master::where('company_id',$companyId)->where('type','supplier')->where('is_active',true)->orderBy('name')->get(); $requestKey=(string)Str::uuid();
+        $products=Product::with('stocks:id,product_id,location_id,quantity')->where('company_id',$companyId)->where('is_active',true)->orderBy('name')->get(); $locations=Master::where('company_id',$companyId)->where('type','location')->where('is_active',true)->orderBy('name')->get(); $suppliers=Master::where('company_id',$companyId)->where('type','supplier')->where('is_active',true)->orderBy('name')->get(); $requestKey=(string)Str::uuid();
         return view('safety-shop.stock.form',compact('products','locations','suppliers','requestKey','companyId'));
     }
     public function store(Request $r, InventoryService $service, PrivateDocumentStorage $documents)

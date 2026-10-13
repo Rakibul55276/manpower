@@ -104,12 +104,12 @@ class InvoiceModuleTest extends TestCase
 
     public function test_only_super_admin_can_customize_full_invoice_design()
     {
-        $payload=['design_primary_color'=>'#123456','design_text_color'=>'#222222','design_header_bg'=>'#eef5f7','design_border_color'=>'#889999','invoice_title'=>'COMMERCIAL TAX INVOICE','invoice_title_ar'=>'فاتورة ضريبية تجارية','design_density'=>'comfortable','design_header_layout'=>'blank','design_title_alignment'=>'left','design_logo_width'=>72,'design_font_size'=>8,'invoice_footer'=>'Custom company contact and payment footer','show_bank_details'=>'1','show_qr'=>'1','show_company_cr'=>'1','show_seller_details'=>'1','show_customer_details'=>'1','show_references'=>'1','show_amount_words'=>'1','show_notes'=>'1','show_footer_uuid'=>'1'];
+        $payload=['design_primary_color'=>'#123456','design_text_color'=>'#222222','design_header_bg'=>'#eef5f7','design_border_color'=>'#889999','invoice_title'=>'COMMERCIAL VAT INVOICE','invoice_title_ar'=>'فاتورة ضريبية تجارية','design_density'=>'comfortable','design_header_layout'=>'blank','design_title_alignment'=>'left','design_logo_width'=>72,'design_font_size'=>8,'invoice_footer'=>'Custom company contact and payment footer','show_bank_details'=>'1','show_qr'=>'1','show_company_cr'=>'1','show_seller_details'=>'1','show_customer_details'=>'1','show_references'=>'1','show_amount_words'=>'1','show_notes'=>'1','show_footer_uuid'=>'1'];
         $this->login($this->manager)->get(route('invoicing.design.index'))->assertForbidden();
         $this->put(route('invoicing.design.update'),$payload)->assertForbidden();
         $this->login($this->admin)->get(route('invoicing.design.index'))->assertOk()->assertSee('Invoice design studio');
         $this->put(route('invoicing.design.update'),$payload)->assertSessionHasNoErrors();
-        $this->assertDatabaseHas('invoice_settings',['design_primary_color'=>'#123456','invoice_title'=>'COMMERCIAL TAX INVOICE','design_header_layout'=>'blank','design_logo_width'=>72,'show_signatures'=>0,'show_qr'=>1]);
+        $this->assertDatabaseHas('invoice_settings',['design_primary_color'=>'#123456','invoice_title'=>'COMMERCIAL VAT INVOICE','design_header_layout'=>'blank','design_logo_width'=>72,'show_signatures'=>0,'show_qr'=>1]);
         $this->assertDatabaseHas('activity_logs',['action'=>'Updated invoice design']);
     }
 }

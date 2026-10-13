@@ -1,16 +1,16 @@
 @extends('layouts.app')
-@section('title','Safety shop sales')
-@section('eyebrow','Safety shop · Sales receipts')
-@section('description','Review stock sales and payments recorded by the safety shop.')
+@section('title','Safety shop invoices')
+@section('eyebrow','Safety shop · VAT invoices')
+@section('description','Review VAT invoices and payments recorded by the safety shop.')
 @section('actions')
-@if(auth()->user()->canApprove())
+@if(auth()->user()->canOperateSafetyShop())
 <a class="btn secondary" href="{{ route('safety-shop.returns.create') }}">Process return</a>
 <a class="btn" href="{{ route('safety-shop.sales.create') }}">New sale</a>
 @endif
 @endsection
 @section('content')
 @include('safety-shop.shared.nav')
-<div class="card"><div class="table-wrap"><table><thead><tr><th>Receipt</th><th>Customer</th><th>Location</th><th>Total SAR</th><th>Payment</th><th>Sold by</th></tr></thead><tbody>
-@forelse($sales as $sale)<tr><td><a href="{{ route('safety-shop.sales.show',$sale) }}"><strong>SALE-{{ $sale->id }}</strong></a><span class="sub">{{ $sale->created_at->format('d M Y H:i') }}</span></td><td>{{ $sale->customer }}@if($sale->customer_phone)<span class="sub">{{ $sale->customer_phone }}</span>@endif</td><td>{{ $sale->location->name }}</td><td>{{ \App\Services\Pay::money($sale->total_cents) }}@if($sale->discount_cents)<span class="sub">Discount {{ \App\Services\Pay::money($sale->discount_cents) }}</span>@endif</td><td>{{ $sale->payment_method==='split'?'Split payment':ucfirst($sale->payment_method) }}</td><td>{{ $sale->creator->name }}</td></tr>@empty<tr><td colspan="6"><div class="empty">No sales yet. Add barcodes and prices to products, receive stock, then open barcode checkout.</div></td></tr>@endforelse
+<div class="card"><div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Customer</th><th>Location</th><th>Total SAR</th><th>Payment</th><th>Sold by</th></tr></thead><tbody>
+@forelse($sales as $sale)<tr><td><a href="{{ route('safety-shop.sales.show',$sale) }}"><strong>{{ $sale->invoice_number }}</strong></a><span class="sub">{{ $sale->created_at->format('d M Y H:i') }}</span>@if($sale->status==='draft')<span class="badge pending">DRAFT</span><span class="sub"><a href="{{ route('safety-shop.sales.draft',$sale) }}">Continue editing</a></span>@elseif($sale->status==='void')<span class="badge cancelled">VOID</span>@elseif($sale->replaces_sale_id)<span class="badge approved">Replacement</span>@endif</td><td>{{ $sale->customer }}@if($sale->customer_phone)<span class="sub">{{ $sale->customer_phone }}</span>@endif</td><td>{{ $sale->location->name }}</td><td>{{ \App\Services\Pay::money($sale->total_cents) }}@if($sale->discount_cents)<span class="sub">Discount {{ \App\Services\Pay::money($sale->discount_cents) }}</span>@endif</td><td>{{ $sale->payment_status==='partially_paid'?'Partially paid':ucfirst($sale->payment_status) }}<span class="sub">{{ $sale->payment_method==='split'?'Split payment':ucfirst($sale->payment_method) }} · SAR {{ \App\Services\Pay::money($sale->paid_cents) }}</span></td><td>{{ $sale->creator->name }}</td></tr>@empty<tr><td colspan="6"><div class="empty">No invoices or drafts yet.</div></td></tr>@endforelse
 </tbody></table></div>@include('partials.pagination',['items'=>$sales])</div>
 @endsection

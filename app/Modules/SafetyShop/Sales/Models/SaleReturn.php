@@ -13,4 +13,8 @@ class SaleReturn extends Model
     public function lines() { return $this->hasMany(SaleReturnLine::class, 'return_id'); }
     public function location() { return $this->belongsTo(\App\Modules\SafetyShop\Shared\Models\Master::class, 'location_id'); }
     public function creator() { return $this->belongsTo(\App\Models\User::class, 'created_by'); }
+    public function getCreditNoteNumberAttribute(): string
+    {
+        return 'CN-'.str_pad((string)$this->id, 8, '0', STR_PAD_LEFT);
+    }
 }

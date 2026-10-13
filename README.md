@@ -53,6 +53,8 @@ Open `http://localhost/hr/public/login`. On a fresh database the installer creat
 SAAS_VOUCHER_ENABLED=true
 SAAS_VOUCHER_GRACE_DAYS=7
 SAFETY_SHOP_ENABLED=true
+QUOTATION_MODULE_ENABLED=true
+DELIVERY_NOTE_MODULE_ENABLED=true
 DOCUMENT_LIBRARY_ENABLED=true
 INVOICING_ENABLED=false
 ZATCA_ENABLED=false
@@ -61,6 +63,8 @@ STOCK_MOVEMENT_DOCUMENT_DIR=safety-shop/stock-documents
 ```
 
 After changing `.env`, run `php artisan config:clear` (or `config:cache` in production).
+
+Quotation and delivery-note access is controlled independently by the two Boolean settings above. Disabling Safety Shop does not disable these modules. Issuers and company admins create drafts; managers and company admins approve them. Approved documents receive permanent `QTN-` or `DN-` numbers and an A4 bilingual PDF generated from HTML/CSS rather than uploaded letterhead artwork.
 
 ## Roles
 
@@ -453,9 +457,17 @@ Enable with `SAFETY_SHOP_ENABLED=true`.
 
 Products contain barcode, SKU, name, category, brand, size/variant, stock unit, safety standard, reorder level, cost, price, status, and notes. Searchable dropdowns and saved suggestions are company-scoped.
 
-Superadmins configure a category SKU prefix. SKU suggestions use that prefix and the next company-scoped sequence. SKU and barcode are unique per company, so another company may reuse them.
+Company admins configure a category SKU prefix. SKU suggestions use that prefix and the next company-scoped sequence. SKU and barcode are unique per company, so another company may reuse them.
 
 Suppliers support optional company/contact, phone, email, VAT, CR, website, and address fields. Locations represent shops/warehouses and are company-scoped.
+
+For development, load the realistic Harbour Edge safety catalogue (10 categories, master values, suppliers, locations, and 13 products) with:
+
+```powershell
+php artisan db:seed --class="Database\Seeders\SafetyShopRealCatalogSeeder" --force
+```
+
+Company admins may delete unused products, customers, and master records. A record linked to stock, sales, invoices, quotations, delivery notes, or other transaction history is protected; delete its dependent transaction data first, or deactivate the record to retain the audit trail.
 
 ### Stock
 

@@ -20,6 +20,7 @@ class User extends Authenticatable
     public function isManager() { return $this->role === 'manager'; }
     public function isIssuer() { return $this->role === 'issuer'; }
     public function isBranchUser() { return in_array($this->role, ['manager', 'issuer'], true); }
+    public function canOperateSafetyShop() { return in_array($this->role, ['admin', 'manager', 'issuer'], true); }
     public function canApprove() { return in_array($this->role, ['admin', 'manager', 'super_admin'], true); }
     public function canAccessCompany($companyId) { return $this->isSuperAdmin() || (int) $this->company_id === (int) $companyId; }
     public function canAccessBranch($branchId) { return $this->isSuperAdmin() || ($this->isCompanyAdmin() ? Branch::whereKey($branchId)->where('company_id', $this->company_id)->exists() : (int) $this->branch_id === (int) $branchId); }

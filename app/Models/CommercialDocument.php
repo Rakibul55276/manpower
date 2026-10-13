@@ -1,0 +1,3 @@
+<?php
+namespace App\Models;use Illuminate\Database\Eloquent\Model;
+class CommercialDocument extends Model{protected $guarded=['id'];protected $casts=['document_date'=>'date','valid_until'=>'date','approved_at'=>'datetime'];public function lines(){return $this->hasMany(CommercialDocumentLine::class);}public function customer(){return $this->belongsTo(\App\Modules\SafetyShop\Sales\Models\Customer::class);}public function quotation(){return $this->belongsTo(self::class,'quotation_id');}public function creator(){return $this->belongsTo(User::class,'created_by');}public function approver(){return $this->belongsTo(User::class,'approved_by');}}

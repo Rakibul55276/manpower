@@ -2,6 +2,7 @@
 namespace App\Services;
 use App\Models\Employee;
 use App\Models\Payroll;
+use App\Models\Company;
 use Dompdf\Dompdf;
 use Dompdf\Options;
 use Illuminate\Support\Facades\Storage;
@@ -9,15 +10,21 @@ use Illuminate\Support\Facades\Schema;
 use App\Modules\SafetyShop\Shared\Models\ReceiptSetting;
 use setasign\Fpdi\Fpdi;
 use setasign\Fpdi\PdfParser\StreamReader;
+use BaconQrCode\Renderer\ImageRenderer;
+use BaconQrCode\Renderer\Image\SvgImageBackEnd;
+use BaconQrCode\Renderer\RendererStyle\RendererStyle;
+use BaconQrCode\Writer;
 class Documents
 {
-    public static function render($view, $data, $paper = 'A4', $orientation = 'portrait', $pageFooter = true)
+    public static function render($view, $data, $paper = 'A4', $orientation = 'portrait', $pageFooter = true, $fixedLetterhead = false, $suppressBrandingAssets = false)
     {
         $brand = static::branding();
         $data['documentBrand'] = $brand;
         $data['documentBrandLogo'] = static::brandingLogo($brand);
-        $data['documentBrandHeader'] = static::brandingAsset(optional($brand)->header_image_path);
-        $data['documentBrandFooter'] = static::brandingAsset(optional($brand)->footer_image_path);
+        $data['documentBrandHeader'] = null;
+        $data['documentBrandFooter'] = null;
+        $data['documentBrandWatermark'] = $suppressBrandingAssets ? null : $data['documentBrandLogo'];
+        $data['fixedLetterhead'] = $fixedLetterhead;
         $cache = storage_path('app/dompdf');
         if (!is_dir($cache)) { mkdir($cache, 0755, true); }
         $options = new Options;
@@ -28,16 +35,46 @@ class Documents
         $options->set('chroot', storage_path('app'));
         $options->set('fontDir', $cache); $options->set('fontCache', $cache); $options->set('tempDir', $cache);
         $html=view($view, $data)->render();
-        if($data['documentBrandHeader'] || $data['documentBrandFooter']){
+        if(!$fixedLetterhead && !$suppressBrandingAssets && $brand){
             $letterhead=view('pdf.letterhead',$data)->render();
             $html=preg_replace('/<body([^>]*)>/i','$0'.$letterhead,$html,1);
         }
         $pdf = new Dompdf($options); $pdf->setPaper($paper, $orientation); $pdf->loadHtml($html, 'UTF-8'); $pdf->render();
-        if ($pageFooter && !$data['documentBrandFooter']) {
+        if ($pageFooter && !$fixedLetterhead && !$data['documentBrandFooter']) {
             $canvas = $pdf->getCanvas();
             $canvas->page_text(40, $canvas->get_height() - 30, ($brand ? $brand->company_name : 'Manpower').'  |  Page {PAGE_NUM} of {PAGE_COUNT}', $pdf->getFontMetrics()->getFont('DejaVu Sans'), 8, [0.4, 0.5, 0.5]);
         }
-        return $pdf->output();
+        $bytes = $pdf->output();
+        if ($fixedLetterhead) $bytes = static::applyFixedLetterhead($bytes);
+        return $bytes;
+    }
+    public static function applyFixedLetterhead($content)
+    {
+        $letterhead = config('documents.letterhead_pdf');
+        if (!$letterhead || !is_file($letterhead)) throw new \RuntimeException('The fixed A4 letterhead PDF is missing.');
+        $output = new Fpdi;
+        $output->setSourceFile($letterhead);
+        $background = $output->importPage(1);
+        $pageSize = $output->getTemplateSize($background);
+        $count = $output->setSourceFile(StreamReader::createByString($content));
+        for ($page = 1; $page <= $count; $page++) {
+            $template = $output->importPage($page);
+            $output->AddPage('P', [$pageSize['width'], $pageSize['height']]);
+            $output->useTemplate($background, 0, 0, $pageSize['width'], $pageSize['height']);
+            $output->useTemplate($template, 0, 0, $pageSize['width'], $pageSize['height']);
+            // Retain the supplied artwork, except for the email and website lines
+            // explicitly excluded below its mobile-number line.
+            $output->SetFillColor(253, 253, 253);
+            $output->Rect(115.5, 275.2, 61, 5.3, 'F');
+            $output->SetFillColor(245, 247, 248);
+            $output->Rect(115.5, 285.0, 61, 6.0, 'F');
+        }
+        return $output->Output('S');
+    }
+    public static function qrDataUri($payload)
+    {
+        $renderer = new ImageRenderer(new RendererStyle(220, 2), new SvgImageBackEnd());
+        return 'data:image/svg+xml;base64,'.base64_encode((new Writer($renderer))->writeString((string)$payload));
     }
     public static function validateAttachment($path)
     {
@@ -72,15 +109,34 @@ class Documents
     public static function payslip(Payroll $payroll)
     {
         $payroll->loadMissing('approver');
+        $qr=static::qrDataUri(implode("\n",[
+            'PAYSLIP: PS-'.str_pad($payroll->id,6,'0',STR_PAD_LEFT),
+            'EMPLOYEE: '.$payroll->employee_name,
+            'PERIOD: '.$payroll->month,
+            'NET PAY: SAR '.Pay::money($payroll->net_pay_cents),
+            'STATUS: '.strtoupper($payroll->status),
+        ]));
         return $payroll->employment_type === 'own'
-            ? static::render('pdf.payslip-own', compact('payroll'), 'A4', 'landscape')
-            : static::render('pdf.payslip', compact('payroll'));
+            ? static::render('pdf.payslip-own', compact('payroll','qr'), 'A4', 'portrait', false, true)
+            : static::render('pdf.payslip', compact('payroll','qr'), 'A4', 'portrait', false, true);
     }
     public static function branding()
     {
         if (!Schema::hasTable('safety_shop_receipt_settings')) return null;
         $companyId=auth()->check() ? auth()->user()->company_id : null;
-        return $companyId ? ReceiptSetting::forCompany($companyId)->first() : null;
+        if(!$companyId) return null;
+        $brand=ReceiptSetting::forCompany($companyId)->first();
+        if(!$brand) return null;
+        $company=Company::find($companyId);
+        if($company){
+            $brand->setAttribute('company_name',$company->name);
+            if($company->name_ar)$brand->setAttribute('company_name_ar',$company->name_ar);
+            if(!$brand->address)$brand->setAttribute('address',$company->address);
+            if(!$brand->phone)$brand->setAttribute('phone',$company->phone);
+            if(!$brand->email)$brand->setAttribute('email',$company->email);
+            if(!$brand->commercial_registration)$brand->setAttribute('commercial_registration',$company->registration_number);
+        }
+        return $brand;
     }
     public static function brandingLogo($brand = null)
     {

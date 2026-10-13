@@ -101,6 +101,7 @@ class LookupController extends Controller
         $rules = ['name' => ['required', 'string', 'max:150', $unique]];
         if ($this->type() === 'companies') {
             $rules += [
+                'name_ar' => 'nullable|string|max:150',
                 'location' => 'required|string|max:150',
                 'registration_number' => 'nullable|string|max:100',
                 'contact_person' => 'nullable|string|max:150',

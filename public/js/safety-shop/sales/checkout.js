@@ -26,6 +26,7 @@
     const bank = document.getElementById('checkout-bank');
     const paymentRows = document.getElementById('checkout-payment-rows');
     const submit = document.getElementById('checkout-submit');
+    const saveDraft = document.getElementById('checkout-save-draft');
     const message = document.getElementById('checkout-message');
     const add = document.getElementById('checkout-add');
     const cart = new Map();
@@ -129,9 +130,13 @@
         document.getElementById('checkout-paid-total').textContent = money(received);
         document.getElementById('checkout-balance').textContent = money(Math.max(0, amount.final - received));
         document.getElementById('checkout-change').textContent = money(change);
+        const status = received <= 0 ? 'Unpaid / آجل' : received < amount.final ? 'Partially paid / مدفوع جزئياً' : 'Paid / مدفوع';
+        const statusNode = document.getElementById('checkout-payment-status');
+        if (statusNode) statusNode.textContent = status;
         const invalidDiscount = amount.discountCents > amount.beforeDiscount;
         const invalidChange = change > cashCents;
-        submit.disabled = posting || busy || !cart.size || invalidDiscount || received < amount.final || invalidChange || received === 0;
+        submit.disabled = posting || busy || !cart.size || invalidDiscount || invalidChange;
+        if (saveDraft) saveDraft.disabled = posting || busy || !cart.size || invalidDiscount;
     }
     function input(name, value) {
         const field = document.createElement('input');
@@ -200,11 +205,21 @@
     [discount, taxRate].forEach(field => field.addEventListener('input', payment));
     form.addEventListener('keydown', event => { if (event.key === 'Enter' && event.target !== submit) event.preventDefault(); });
     form.addEventListener('submit', event => {
-        if (posting || busy || !cart.size || submit.disabled) { event.preventDefault(); return; }
-        posting = true; submit.disabled = true; submit.textContent = 'Posting sale…';
+        const draftAction = event.submitter?.value === 'draft';
+        if (posting || busy || !cart.size || (draftAction ? saveDraft?.disabled : submit.disabled)) { event.preventDefault(); return; }
+        posting = true; submit.disabled = true; if(saveDraft)saveDraft.disabled=true; event.submitter.textContent = draftAction ? 'Saving draft…' : 'Posting sale…';
     });
+    const initialNode = document.getElementById('checkout-initial-data');
+    if (initialNode) {
+        try {
+            const initial = JSON.parse(initialNode.textContent);
+            (initial.lines || []).forEach(item => cart.set(item.id, {...item, quantity: Math.min(item.quantity, item.available)}));
+            message.textContent = 'Replacement items loaded. Review quantities and scan any additional products before posting.';
+        } catch (error) { message.textContent = 'The replacement invoice data could not be loaded. Rescan the required products.'; }
+    }
     const saved = {cash: Number(paymentRows.dataset.cash || 0), card: Number(paymentRows.dataset.card || 0), bank: Number(paymentRows.dataset.bank || 0)};
     const savedMethods = Object.keys(saved).filter(name => saved[name] > 0);
     (savedMethods.length ? savedMethods : ['cash']).forEach(name => { addPaymentRow(name); paymentEntries[paymentEntries.length - 1].amount.value = saved[name] ? saved[name].toFixed(2) : '0.00'; });
-    syncCustomerType(); if (customerName.value && !savedCustomer.value) showNewCustomer(true); render();
+    if (savedCustomer?.value) savedCustomer.dispatchEvent(new Event('change')); else syncCustomerType();
+    if (customerName.value && !savedCustomer.value) showNewCustomer(true); render();
 })();
