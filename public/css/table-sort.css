@@ -1,0 +1,6 @@
+.table-sort-button{appearance:none;border:0;background:transparent;color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit;text-align:inherit;padding:0;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.table-sort-button:hover{text-decoration:underline}
+.table-sort-button:focus-visible{outline:2px solid #1592bd;outline-offset:4px;border-radius:2px}
+.table-sort-icon{font-size:.9em;opacity:.65;white-space:nowrap}
+th[aria-sort="ascending"] .table-sort-icon,th[aria-sort="descending"] .table-sort-icon{opacity:1}
+@media print{.table-sort-icon{display:none}.table-sort-button{text-decoration:none}}

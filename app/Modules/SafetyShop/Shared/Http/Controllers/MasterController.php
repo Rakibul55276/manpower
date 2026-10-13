@@ -54,15 +54,22 @@ class MasterController extends Controller
     {
         abort_unless($request->user()->isCompanyAdmin(), 403);
         abort_unless($master->type === $this->type && (int) $master->company_id === (int) $request->user()->company_id, 404);
-        $used = match ($master->type) {
-            'category' => DB::table('safety_shop_products')->where('category_id', $master->id)->exists(),
-            'location' => DB::table('safety_shop_stocks')->where('location_id', $master->id)->exists()
+        switch ($master->type) {
+            case 'category':
+                $used = DB::table('safety_shop_products')->where('category_id', $master->id)->exists();
+                break;
+            case 'location':
+                $used = DB::table('safety_shop_stocks')->where('location_id', $master->id)->exists()
                 || DB::table('safety_shop_movements')->where('location_id', $master->id)->orWhere('destination_id', $master->id)->exists()
                 || DB::table('safety_shop_sales')->where('location_id', $master->id)->exists()
-                || DB::table('safety_shop_receipt_settings')->where('default_location_id', $master->id)->exists(),
-            'supplier' => DB::table('safety_shop_movements')->where('supplier_id', $master->id)->exists(),
-            default => false,
-        };
+                || DB::table('safety_shop_receipt_settings')->where('default_location_id', $master->id)->exists();
+                break;
+            case 'supplier':
+                $used = DB::table('safety_shop_movements')->where('supplier_id', $master->id)->exists();
+                break;
+            default:
+                $used = false;
+        }
         if ($used) return back()->withErrors(['delete' => 'This record is in use. Delete the related product or transaction data first, or set this record inactive to preserve the audit trail.']);
         ActivityLog::record('Deleted unused safety shop '.$master->type, $master->name);
         $master->delete();

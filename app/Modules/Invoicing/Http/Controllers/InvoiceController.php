@@ -60,7 +60,8 @@ class InvoiceController extends Controller
     public function items(Request $request)
     {
         $request->validate(['search'=>'nullable|string|max:100','tax'=>'nullable|in:standard,zero,exempt','status'=>'nullable|in:active,inactive']);
-        $query=InvoiceItem::query()->orderBy('name');
+        $companyId=$request->user()->company_id;
+        $query=InvoiceItem::query()->with(['inventoryProduct'=>function($query)use($companyId){$query->where('company_id',$companyId)->with('stocks.location');}])->orderBy('name');
         if($request->filled('search')){$search=trim($request->search);$query->where(function($q)use($search){$q->where('sku','like','%'.$search.'%')->orWhere('name','like','%'.$search.'%')->orWhere('name_ar','like','%'.$search.'%');});}
         if($request->filled('tax'))$query->where('tax_category',$request->tax);
         if($request->filled('status'))$query->where('is_active',$request->status==='active');

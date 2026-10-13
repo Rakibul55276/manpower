@@ -1,4 +1,13 @@
 <?php
 namespace App\Modules\Invoicing\Models;
 use Illuminate\Database\Eloquent\Model;
-class InvoiceItem extends Model { protected $guarded = ['id']; protected $casts = ['is_active'=>'boolean']; }
+class InvoiceItem extends Model
+{
+    protected $guarded = ['id'];
+    protected $casts = ['is_active'=>'boolean'];
+
+    public function inventoryProduct()
+    {
+        return $this->hasOne(\App\Modules\SafetyShop\Products\Models\Product::class, 'sku', 'sku');
+    }
+}

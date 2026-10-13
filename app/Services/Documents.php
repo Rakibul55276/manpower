@@ -39,7 +39,17 @@ class Documents
             $letterhead=view('pdf.letterhead',$data)->render();
             $html=preg_replace('/<body([^>]*)>/i','$0'.$letterhead,$html,1);
         }
-        $pdf = new Dompdf($options); $pdf->setPaper($paper, $orientation); $pdf->loadHtml($html, 'UTF-8'); $pdf->render();
+        if ($view === 'pdf.safety-shop-bulk-invoice') {
+            $pdf = InvoicePdfLayout::render($data, $options);
+        } else {
+            $pdf = new Dompdf($options); $pdf->setPaper($paper, $orientation); $pdf->loadHtml($html, 'UTF-8'); $pdf->render();
+        }
+        if ($view === 'pdf.safety-shop-bulk-invoice') {
+            $canvas = $pdf->getCanvas();
+            $font = $pdf->getFontMetrics()->getFont('DejaVu Sans');
+            $canvas->page_text(24, $canvas->get_height() - 20, $data['sale']->invoice_number, $font, 7, [0.4, 0.5, 0.55]);
+            $canvas->page_text($canvas->get_width() - 112, $canvas->get_height() - 20, 'Page {PAGE_NUM} of {PAGE_COUNT}', $font, 7, [0.4, 0.5, 0.55]);
+        }
         if ($pageFooter && !$fixedLetterhead && !$data['documentBrandFooter']) {
             $canvas = $pdf->getCanvas();
             $canvas->page_text(40, $canvas->get_height() - 30, ($brand ? $brand->company_name : 'Manpower').'  |  Page {PAGE_NUM} of {PAGE_COUNT}', $pdf->getFontMetrics()->getFont('DejaVu Sans'), 8, [0.4, 0.5, 0.5]);
