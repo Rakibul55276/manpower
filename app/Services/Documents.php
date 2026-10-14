@@ -47,6 +47,15 @@ class Documents
         if ($view === 'pdf.safety-shop-bulk-invoice') {
             $canvas = $pdf->getCanvas();
             $font = $pdf->getFontMetrics()->getFont('DejaVu Sans');
+            if ($data['sale']->status === 'draft') {
+                $canvas->page_script(function (int $pageNumber, int $pageCount, $pageCanvas, $fontMetrics): void {
+                    $draftFont = $fontMetrics->getFont('DejaVu Sans', 'bold');
+                    $label = 'DRAFT';
+                    $size = 62;
+                    $width = $fontMetrics->getTextWidth($label, $draftFont, $size);
+                    $pageCanvas->text(($pageCanvas->get_width() - $width) / 2, $pageCanvas->get_height() * .48, $label, $draftFont, $size, [0.12, 0.32, 0.58, 'alpha' => .22], 0, 2, -18);
+                });
+            }
             $canvas->page_text(24, $canvas->get_height() - 20, $data['sale']->invoice_number, $font, 7, [0.4, 0.5, 0.55]);
             $canvas->page_text($canvas->get_width() - 112, $canvas->get_height() - 20, 'Page {PAGE_NUM} of {PAGE_COUNT}', $font, 7, [0.4, 0.5, 0.55]);
         }

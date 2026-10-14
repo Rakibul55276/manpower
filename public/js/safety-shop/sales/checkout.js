@@ -32,6 +32,9 @@
     const cart = new Map();
     let busy = false;
     let posting = false;
+    let scanTimer = null;
+    let barcodeInputStartedAt = 0;
+    let previousBarcodeLength = 0;
     const paymentEntries = [];
     const paymentLabels = {cash: 'Cash', card: 'Card', bank: 'Bank transfer'};
     const syncCustomerType = () => {
@@ -175,6 +178,7 @@
         payment();
     }
     async function scan() {
+        if (scanTimer) { window.clearTimeout(scanTimer); scanTimer = null; }
         if (busy || posting) return;
         if (!location.value) { message.textContent = 'Choose a shop location first.'; location.focus(); return; }
         const code = barcode.value.trim();
@@ -199,15 +203,36 @@
         } catch (error) { message.textContent = error.message; }
         finally { busy = false; location.disabled = false; add.disabled = false; barcode.disabled = false; payment(); barcode.focus(); barcode.select(); }
     }
+    function queueAutomaticScan(event) {
+        if (scanTimer) window.clearTimeout(scanTimer);
+        const code = barcode.value.trim();
+        if (!code || busy || posting) { barcodeInputStartedAt = 0; previousBarcodeLength = 0; return; }
+        const now = Date.now();
+        if (!barcodeInputStartedAt || code.length <= previousBarcodeLength) barcodeInputStartedAt = now;
+        const insertedTogether = code.length - previousBarcodeLength > 1 || event.inputType === 'insertFromPaste';
+        previousBarcodeLength = code.length;
+        const averageCharacterDelay = code.length > 1 ? (now - barcodeInputStartedAt) / (code.length - 1) : Infinity;
+        const scannerSpeed = code.length >= 4 && averageCharacterDelay <= 60;
+        if (!insertedTogether && !scannerSpeed) return;
+        scanTimer = window.setTimeout(() => { scanTimer = null; scan(); }, 120);
+    }
+    barcode.addEventListener('input', queueAutomaticScan);
     barcode.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); scan(); } });
-    add.addEventListener('click', scan);
+    add.addEventListener('click', event => { event.preventDefault(); scan(); });
     location.addEventListener('change', () => { cart.clear(); render(); message.textContent = 'Location changed. Scan products for this location.'; barcode.focus(); });
     [discount, taxRate].forEach(field => field.addEventListener('input', payment));
     form.addEventListener('keydown', event => { if (event.key === 'Enter' && event.target !== submit) event.preventDefault(); });
     form.addEventListener('submit', event => {
         const draftAction = event.submitter?.value === 'draft';
         if (posting || busy || !cart.size || (draftAction ? saveDraft?.disabled : submit.disabled)) { event.preventDefault(); return; }
-        posting = true; submit.disabled = true; if(saveDraft)saveDraft.disabled=true; event.submitter.textContent = draftAction ? 'Saving draft…' : 'Posting sale…';
+        if (!draftAction && !window.confirm('Finalize and lock this invoice? Stock will be deducted and the invoice cannot be edited directly afterward.')) { event.preventDefault(); return; }
+        // Disabled submit buttons are omitted from browser form data. Preserve
+        // the selected workflow before locking both buttons against double-clicks.
+        const action = input('submit_action', draftAction ? 'draft' : 'final');
+        form.append(action);
+        if (event.submitter) event.submitter.removeAttribute('name');
+        posting = true; submit.disabled = true; if(saveDraft)saveDraft.disabled=true;
+        if (event.submitter) event.submitter.textContent = draftAction ? 'Saving draft…' : 'Posting sale…';
     });
     const initialNode = document.getElementById('checkout-initial-data');
     if (initialNode) {

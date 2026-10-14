@@ -8,17 +8,24 @@ class InvoicePdfLayout
     public static function render(array $data, Options $options): Dompdf
     {
         $lines = $data['sale']->lines->values();
+        $data['invoiceCompactEight'] = $lines->count() > 0 && $lines->count() <= 8;
         $data['invoiceLinePages'] = collect([$lines]);
         $data['invoiceClosingSpacer'] = 0;
         $pdf = static::pass($data, $options, $metrics);
-        $pageBottom = $pdf->getCanvas()->get_height() - 54;
+        // Prefer the natural single-page layout for ordinary invoices. The
+        // measured planner remains the fallback when long descriptions or
+        // closing content genuinely overflow A4.
+        $pageBottom = $pdf->getCanvas()->get_height() - 40;
         $firstBudget = $pageBottom - ($metrics['firstRowY'] ?? 350) - 8;
         $nextBudget = $pageBottom - 26 - 65 - ($metrics['headingHeight'] ?? 35) - 8;
         $heights = [];
         foreach ($lines as $index => $line) $heights[] = max(20, $metrics['rows'][$index] ?? 30);
         $closingHeight = ($metrics['closingHeight'] ?? 240) + 5;
+        $fixedPlan = $lines->count() > 8
+            ? array_values(array_map('count', array_chunk($heights, 8)))
+            : null;
         for ($attempt = 0; $attempt < 4; $attempt++) {
-            $plan = static::plan($heights, $firstBudget - $attempt * 18, $nextBudget - $attempt * 18, $closingHeight);
+            $plan = $fixedPlan ?: static::plan($heights, $firstBudget - $attempt * 18, $nextBudget - $attempt * 18, $closingHeight);
             $offset = 0;
             $data['invoiceLinePages'] = collect($plan)->map(function ($count) use ($lines, &$offset) {
                 $page = $lines->slice($offset, $count)->values(); $offset += $count; return $page;
