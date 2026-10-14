@@ -84,7 +84,7 @@ class TimesheetController extends Controller
     {
         Access::employee($employee);
         abort_unless($employee->employment_type === $this->workforce(), 404);
-        $months = Timesheet::where('employee_id', $employee->id)->when(auth()->user()->isBranchUser(),fn($q)=>$q->where('branch_id',auth()->user()->branch_id))->orderByDesc('work_date')->get('work_date')->map(function ($entry) {
+        $months = Timesheet::where('employee_id', $employee->id)->when(auth()->user()->isBranchUser(),fn($q)=>$q->where('branch_id',auth()->user()->activeBranchId('manpower')))->orderByDesc('work_date')->get('work_date')->map(function ($entry) {
             return $entry->work_date->format('Y-m');
         })->unique()->values();
         $routePrefix = $this->prefix();
@@ -100,10 +100,10 @@ class TimesheetController extends Controller
             'months.*' => 'required|date_format:Y-m|distinct',
             'orientation' => 'required|in:portrait,landscape',
         ]);
-        $available = Timesheet::where('employee_id', $employee->id)->when(auth()->user()->isBranchUser(),fn($q)=>$q->where('branch_id',auth()->user()->branch_id))->get('work_date')->map(function ($entry) { return $entry->work_date->format('Y-m'); })->unique();
+        $available = Timesheet::where('employee_id', $employee->id)->when(auth()->user()->isBranchUser(),fn($q)=>$q->where('branch_id',auth()->user()->activeBranchId('manpower')))->get('work_date')->map(function ($entry) { return $entry->work_date->format('Y-m'); })->unique();
         $months = collect($data['months'])->unique()->sort()->values();
         if ($months->diff($available)->isNotEmpty()) { throw ValidationException::withMessages(['months' => 'Choose only months that contain timesheet entries for this employee.']); }
-        $entries = Timesheet::with(['creator', 'reviewer'])->where('employee_id', $employee->id)->when(auth()->user()->isBranchUser(),fn($q)=>$q->where('branch_id',auth()->user()->branch_id))->where(function ($query) use ($months) {
+        $entries = Timesheet::with(['creator', 'reviewer'])->where('employee_id', $employee->id)->when(auth()->user()->isBranchUser(),fn($q)=>$q->where('branch_id',auth()->user()->activeBranchId('manpower')))->where(function ($query) use ($months) {
             foreach ($months as $month) { $query->orWhere('work_date', 'like', $month.'%'); }
         })->orderBy('work_date')->get();
         $sheets = $months->map(function ($month) use ($entries) {

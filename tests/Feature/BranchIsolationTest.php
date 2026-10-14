@@ -44,6 +44,41 @@ class BranchIsolationTest extends TestCase
         $this->get(route('employees.photo',$sibling))->assertForbidden();
     }
 
+    public function test_modules_have_separate_login_pages_and_session_boundaries()
+    {
+        $this->get(route('manpower.login'))->assertOk()->assertSee('Sign in to Manpower')->assertSee(route('manpower.login.submit'),false);
+        $this->get(route('safety-shop.login'))->assertOk()->assertSee('Sign in to Safety Shop')->assertSee(route('safety-shop.login.submit'),false);
+        $this->withSession(['active_module'=>'manpower'])->actingAs($this->manager)->get(route('manpower.index'))->assertOk();
+        $this->get(route('safety-shop.index'))->assertForbidden();
+        $this->post(route('manpower.logout'))->assertRedirect(route('manpower.login'));
+        $this->withSession(['active_module'=>'safety-shop'])->actingAs($this->manager)->get(route('safety-shop.index'))->assertOk();
+        $this->get(route('manpower.index'))->assertForbidden();
+        $this->post(route('safety-shop.logout'))->assertRedirect(route('safety-shop.login'));
+    }
+
+    public function test_module_assignments_and_document_libraries_are_isolated()
+    {
+        $this->manager->moduleAccesses()->create(['company_id'=>$this->company->id,'module'=>'manpower','branch_id'=>$this->branch->id,'role'=>'manager','is_active'=>true]);
+        $this->manager->moduleAccesses()->create(['company_id'=>$this->company->id,'module'=>'safety-shop','branch_id'=>$this->otherBranch->id,'role'=>'issuer','is_active'=>true]);
+        $manpower=LibraryDocument::create(['company_id'=>$this->company->id,'module'=>'manpower','branch_id'=>$this->branch->id,'owner_id'=>$this->manager->id,'uploaded_by'=>$this->manager->id,'title'=>'Manpower branch file','original_name'=>'manpower.pdf','storage_path'=>'documents/manpower.pdf','mime_type'=>'application/pdf','size_bytes'=>100]);
+        $safety=LibraryDocument::create(['company_id'=>$this->company->id,'module'=>'safety-shop','branch_id'=>$this->otherBranch->id,'owner_id'=>$this->manager->id,'uploaded_by'=>$this->manager->id,'title'=>'Safety branch file','original_name'=>'safety.pdf','storage_path'=>'documents/safety.pdf','mime_type'=>'application/pdf','size_bytes'=>100]);
+
+        $this->withSession(['active_module'=>'manpower'])->actingAs($this->manager)->get(route('manpower.documents.index'))->assertOk()->assertSee($manpower->title)->assertDontSee($safety->title);
+        $this->flushSession()->withSession(['active_module'=>'safety-shop'])->actingAs($this->manager)->get(route('safety-shop.documents.index'))->assertOk()->assertSee($safety->title)->assertDontSee($manpower->title);
+        $this->get(route('safety-shop.documents.show',$manpower))->assertForbidden();
+
+        $this->flushSession()->withSession(['active_module'=>'manpower'])->actingAs($this->admin)->get(route('manpower.documents.index'))->assertOk()->assertSee($manpower->title)->assertDontSee($safety->title);
+    }
+
+    public function test_opening_other_module_login_clears_current_module_session()
+    {
+        $this->withSession(['active_module'=>'manpower'])->actingAs($this->manager)
+            ->get(route('safety-shop.login'))
+            ->assertOk()
+            ->assertSee('Sign in to Safety Shop');
+        $this->assertGuest();
+    }
+
     public function test_manager_cannot_forge_company_or_branch_on_employee_write()
     {
         $payload=$this->employeePayload($this->company->id,$this->otherBranch->id);
@@ -211,6 +246,19 @@ class BranchIsolationTest extends TestCase
         $this->post(route('company-users.store'),$payload)->assertSessionHasErrors('role');
         $foreign=$this->user('foreign_issuer','issuer',$this->otherCompany->id,$this->foreignBranch->id);
         $this->get(route('company-users.edit',$foreign))->assertForbidden();
+    }
+
+    public function test_superadmin_can_create_operational_users_with_module_scopes()
+    {
+        $super=$this->user('full_control_owner','super_admin',null,null);
+        $this->actingAs($super)->post(route('users.store'),[
+            'name'=>'Safety Operator','username'=>'safety_operator','password'=>'StrongPass1!','password_confirmation'=>'StrongPass1!',
+            'role'=>'issuer','is_active'=>1,'company_id'=>$this->company->id,
+            'safety_shop_enabled'=>1,'safety_shop_role'=>'issuer','safety_shop_branch_id'=>$this->otherBranch->id,
+        ])->assertSessionHasNoErrors();
+        $created=User::where('username','safety_operator')->firstOrFail();
+        $this->assertDatabaseHas('user_module_access',['user_id'=>$created->id,'module'=>'safety-shop','branch_id'=>$this->otherBranch->id,'role'=>'issuer']);
+        $this->assertDatabaseMissing('user_module_access',['user_id'=>$created->id,'module'=>'manpower']);
     }
 
     public function test_company_branding_screen_is_removed_in_favour_of_fixed_letterhead()

@@ -5,11 +5,16 @@ namespace Tests\Feature;
 use App\Models\CommercialDocument;
 use App\Models\Company;
 use App\Models\User;
+use App\Models\QuotationItemMaster;
 use App\Modules\SafetyShop\Products\Models\Product;
 use App\Modules\SafetyShop\Sales\Models\Customer;
 use App\Modules\SafetyShop\Shared\Models\ReceiptSetting;
+use App\Modules\SafetyShop\Shared\Models\Master;
+use App\Modules\SafetyShop\Stock\Models\Stock;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
+use App\Modules\SafetyShop\Sales\Models\Sale;
 use Tests\TestCase;
 
 class CommercialDocumentTest extends TestCase
@@ -50,7 +55,8 @@ class CommercialDocumentTest extends TestCase
         $this->login($this->manager)->post(route('quotations.approve', $quotation))->assertSessionHasNoErrors();
         $quotation->refresh();
         $this->assertSame('approved', $quotation->status);
-        $this->assertSame('QTN-'.str_pad($quotation->id, 6, '0', STR_PAD_LEFT), $quotation->number);
+        $this->assertMatchesRegularExpression('/^QTN-[A-Z0-9]{8}$/', $quotation->number);
+        $this->assertNotSame('QTN-'.str_pad($quotation->id, 6, '0', STR_PAD_LEFT), $quotation->number);
         $this->get(route('quotations.pdf', $quotation))->assertOk()->assertHeader('Content-Type', 'application/pdf');
 
         $delivery = ['customer_id' => $this->customer->id, 'quotation_id' => $quotation->id, 'document_date' => now()->toDateString(), 'reference' => 'PO-88', 'lines' => [['product_id' => $this->product->id, 'description' => 'Safety Helmet', 'sku' => 'PPE-100', 'unit' => 'piece', 'quantity' => 2]]];
@@ -72,11 +78,37 @@ class CommercialDocumentTest extends TestCase
         $this->login($this->issuer)->post(route('delivery-notes.store'), ['customer_id' => $this->customer->id, 'quotation_id' => $foreign->id, 'document_date' => now()->toDateString(), 'lines' => [['description' => 'Item', 'unit' => 'EA', 'quantity' => 1]]])->assertSessionHasErrors('quotation_id');
     }
 
+    public function test_manual_quotation_items_become_reusable_master_data(): void
+    {
+        $payload=['customer_id'=>$this->customer->id,'document_date'=>now()->toDateString(),'valid_until'=>now()->addDays(14)->toDateString(),'lines'=>[['description'=>'Annual PPE inspection service','sku'=>'SVC-PPE-01','unit'=>'service','quantity'=>1,'unit_price'=>'275.00']]];
+        $this->login($this->issuer)->post(route('quotations.store'),$payload)->assertSessionHasNoErrors();
+        $master=QuotationItemMaster::where('company_id',$this->company->id)->where('sku','SVC-PPE-01')->firstOrFail();
+        $this->assertSame(27500,$master->unit_price_cents);
+        $this->assertDatabaseHas('commercial_document_lines',['quotation_item_master_id'=>$master->id,'description'=>'Annual PPE inspection service']);
+        $this->login($this->issuer)->get(route('quotations.create'))->assertOk()->assertSee('Annual PPE inspection service');
+    }
+
+    public function test_approved_quotation_can_prefill_invoice_checkout(): void
+    {
+        $location=Master::create(['company_id'=>$this->company->id,'type'=>'location','name'=>'Main Shop','is_active'=>true]);
+        Stock::create(['product_id'=>$this->product->id,'location_id'=>$location->id,'quantity'=>12]);
+        $quotation=CommercialDocument::create(['company_id'=>$this->company->id,'type'=>'quotation','number'=>'QTN-AB12CD34','customer_id'=>$this->customer->id,'document_date'=>now(),'valid_until'=>now()->addMonth(),'reference'=>'PO-55','notes'=>'Deliver to main warehouse.','subtotal_cents'=>9000,'tax_cents'=>1350,'total_cents'=>10350,'status'=>'approved','created_by'=>$this->issuer->id,'approved_by'=>$this->manager->id,'approved_at'=>now()]);
+        $quotation->lines()->create(['product_id'=>$this->product->id,'description'=>'Quoted Safety Helmet','sku'=>$this->product->sku,'unit'=>'piece','quantity'=>2,'unit_price_cents'=>4500,'subtotal_cents'=>9000,'tax_rate_units'=>1500,'tax_cents'=>1350]);
+        $quotation->lines()->create(['product_id'=>$this->product->id,'description'=>'Quoted Safety Helmet','sku'=>$this->product->sku,'unit'=>'piece','quantity'=>1,'unit_price_cents'=>4500,'subtotal_cents'=>4500,'tax_rate_units'=>1500,'tax_cents'=>675]);
+        $this->login($this->manager)->get(route('safety-shop.sales.create'))->assertOk()->assertSee('Invoice from approved quotation')->assertSee('QTN-AB12CD34');
+        $this->getJson(route('safety-shop.sales.quotation',[$quotation,'location_id'=>$location->id]))->assertOk()->assertJson(['number'=>'QTN-AB12CD34','customer_id'=>$this->customer->id,'lines'=>[['id'=>$this->product->id,'price_cents'=>4500,'available'=>12,'quantity'=>3]]]);
+        $this->post(route('safety-shop.sales.store'),['request_key'=>(string)Str::uuid(),'quotation_id'=>$quotation->id,'location_id'=>$location->id,'supply_date'=>now()->toDateString(),'customer_id'=>$this->customer->id,'customer_type'=>'company','discount'=>'0.00','tax_rate'=>'15.00','cash_paid'=>'0.00','card_paid'=>'0.00','bank_paid'=>'0.00','lines'=>[['product_id'=>$this->product->id,'quantity'=>2,'price_cents'=>4500]]])->assertSessionHasNoErrors();
+        $sale=Sale::firstOrFail();
+        $this->assertSame($quotation->id,(int)$sale->quotation_id);
+        $this->assertSame(4500,$sale->lines()->firstOrFail()->price_cents);
+    }
+
     public function test_each_module_has_an_independent_boolean_switch(): void
     {
         config(['safety_shop.enabled' => false]);
-        $this->login($this->manager)->get(route('quotations.index'))->assertOk();
-        $this->get(route('delivery-notes.index'))->assertOk();
+        $this->login($this->manager)->get(route('quotations.index'))->assertNotFound();
+        $this->get(route('delivery-notes.index'))->assertNotFound();
+        config(['safety_shop.enabled' => true]);
         config(['commercial_documents.quotation_enabled' => false]);
         $this->get(route('quotations.index'))->assertNotFound();
         $this->get(route('delivery-notes.index'))->assertOk();

@@ -13,6 +13,7 @@ class Sale extends Model
     public function returns() { return $this->hasMany(SaleReturn::class); }
     public function payments() { return $this->hasMany(SalePayment::class); }
     public function customerRecord() { return $this->belongsTo(Customer::class,'customer_id'); }
+    public function quotation() { return $this->belongsTo(\App\Models\CommercialDocument::class,'quotation_id'); }
     public function location() { return $this->belongsTo(Master::class,'location_id'); }
     public function creator() { return $this->belongsTo(\App\Models\User::class,'created_by'); }
     public function cancelledBy() { return $this->belongsTo(\App\Models\User::class,'cancelled_by'); }

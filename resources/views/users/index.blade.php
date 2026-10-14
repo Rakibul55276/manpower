@@ -1,29 +1,15 @@
 @extends('layouts.app')
 @section('title','User accounts')
-@section('description','Platform users and company teams grouped by access boundary.')
+@section('description','Searchable, paginated platform and company user directory.')
 @section('actions')<a class="btn" href="{{ route($userRoutePrefix.'.create') }}">Add user →</a>@endsection
 @section('content')
-@if(auth()->user()->isSuperAdmin())<div class="card">
-<div class="card-head"><div><h2>System owners</h2><span class="sub">Platform configuration without access to company operations</span></div><span class="badge">{{ $platformUsers->count() }} users</span></div>
-@include('users.partials.account-table',['accounts'=>$platformUsers,'empty'=>'No platform superadmin accounts found.'])
-</div>@endif
-
-<div class="grid-2">
-@forelse($companies as $company)
-<div class="card">
-<div class="card-head"><div><h2>{{ $company->name }}</h2><span class="sub">{{ $company->company_code ?: 'No company code' }} · {{ $company->branches->count() }} {{ Str::plural('branch',$company->branches->count()) }}</span></div><span class="badge {{ $company->is_active ? 'active' : 'inactive' }}">{{ $company->users->count() }} {{ Str::plural('user',$company->users->count()) }}</span></div>
-@include('users.partials.account-table',['accounts'=>$company->users,'empty'=>'No administrator, manager, or issuer assigned.'])
-<div class="card-body" style="padding-top:12px;padding-bottom:12px;border-top:1px solid var(--line)"><div class="actions">@if(auth()->user()->isSuperAdmin())<a class="btn secondary small" href="{{ route('companies.branches.index',$company) }}">Manage branches</a>@endif<a class="btn secondary small" href="{{ route($userRoutePrefix.'.create') }}">Add company user</a></div></div>
+<div class="card"><div class="card-body"><form class="filters" method="GET">
+<div class="field search"><label for="search">Search users</label><input id="search" name="search" value="{{ request('search') }}" placeholder="Name, username, or company"></div>
+<div class="field"><label for="role">Role</label><select id="role" name="role"><option value="">All roles</option>@foreach(['super_admin'=>'System Owner','admin'=>'Company Admin','manager'=>'Manager','issuer'=>'Issuer'] as $value=>$label)<option value="{{ $value }}" {{ request('role')===$value?'selected':'' }}>{{ $label }}</option>@endforeach</select></div>
+<button class="btn secondary">Apply filters</button><a class="btn link" href="{{ route($userRoutePrefix.'.index') }}">Clear</a>
+</form></div></div>
+<div class="card"><div class="card-head"><div><h2>Account directory</h2><span class="sub">25 accounts per page</span></div><span class="badge">{{ number_format($accounts->total()) }} accounts</span></div>
+@include('users.partials.account-table',['accounts'=>$accounts,'empty'=>'No user accounts match the selected filters.'])
+@include('partials.pagination',['items'=>$accounts])
 </div>
-@empty
-<div class="card full"><div class="empty"><strong>No companies configured</strong><p>Create a company before assigning administrators and branch managers.</p><a class="btn" href="{{ route('companies.create') }}">Add company</a></div></div>
-@endforelse
-</div>
-
-@if($unassignedUsers->isNotEmpty())
-<div class="card">
-<div class="card-head"><div><h2>Unassigned company users</h2><span class="sub">Assign these accounts before they can use company modules</span></div><span class="badge inactive">{{ $unassignedUsers->count() }} users</span></div>
-@include('users.partials.account-table',['accounts'=>$unassignedUsers,'empty'=>'No unassigned users.'])
-</div>
-@endif
 @endsection

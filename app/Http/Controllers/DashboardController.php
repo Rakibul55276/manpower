@@ -21,7 +21,7 @@ class DashboardController extends Controller
         $previousMonth = $period->copy()->subMonth()->format('Y-m');
         $employees = Access::employees();
         $employeeIds = Access::employees()->select('id');
-        $timesheets = Timesheet::whereIn('employee_id', $employeeIds); if(!$request->user()->isSuperAdmin())$timesheets->where('company_id',$request->user()->company_id); if($request->user()->isBranchUser())$timesheets->where('branch_id',$request->user()->branch_id);
+        $timesheets = Timesheet::whereIn('employee_id', $employeeIds); if(!$request->user()->isSuperAdmin())$timesheets->where('company_id',$request->user()->company_id); if($request->user()->isBranchUser())$timesheets->where('branch_id',$request->user()->activeBranchId('manpower'));
         $payrolls = Payroll::where('month', $month)->whereIn('employee_id', $employeeIds);
         $previousPayrolls = Payroll::where('month', $previousMonth)->whereIn('employee_id', $employeeIds);
         $monthStart = $period->copy()->startOfMonth()->format('Y-m-d'); $monthEnd = $period->copy()->endOfMonth()->format('Y-m-d');
@@ -49,14 +49,14 @@ class DashboardController extends Controller
         $changes = ['regular' => $change($stats['regular'], $previous['regular']), 'overtime' => $change($stats['overtime'], $previous['overtime']), 'payroll' => $change($stats['payroll'], $previous['payroll'])];
         $recent = (clone $employees)->with(['company', 'designation'])->latest()->limit(5)->get();
         $pending = (clone $timesheets)->with('employee')->where('status', 'pending')->whereBetween('work_date', [$monthStart, $monthEnd])->orderBy('work_date')->limit(5)->get();
-        $companies = Access::companies()->withCount(['employees' => function ($q) use ($request) { $q->where('status', 'active'); if($request->user()->isBranchUser())$q->where('branch_id',$request->user()->branch_id); }])->orderBy('name')->get();
+        $companies = Access::companies()->withCount(['employees' => function ($q) use ($request) { $q->where('status', 'active'); if($request->user()->isBranchUser())$q->where('branch_id',$request->user()->activeBranchId('manpower')); }])->orderBy('name')->get();
         $companyIds = $companies->pluck('id');
         $companyPayroll = Payroll::where('month', $month)->whereIn('employee_id',$employeeIds)->whereIn('company_id', $companyIds)->selectRaw('company_id, SUM(net_pay_cents) total')->groupBy('company_id')->pluck('total', 'company_id');
-        $companyPendingQuery = Timesheet::join('employees', 'employees.id', '=', 'timesheets.employee_id')->whereIn('employees.id',$employeeIds)->whereIn('employees.company_id', $companyIds)->where('timesheets.status', 'pending')->whereBetween('timesheets.work_date', [$monthStart, $monthEnd]); if($request->user()->isBranchUser())$companyPendingQuery->where('timesheets.branch_id',$request->user()->branch_id); $companyPending=$companyPendingQuery->selectRaw('employees.company_id, COUNT(*) total')->groupBy('employees.company_id')->pluck('total', 'employees.company_id');
+        $companyPendingQuery = Timesheet::join('employees', 'employees.id', '=', 'timesheets.employee_id')->whereIn('employees.id',$employeeIds)->whereIn('employees.company_id', $companyIds)->where('timesheets.status', 'pending')->whereBetween('timesheets.work_date', [$monthStart, $monthEnd]); if($request->user()->isBranchUser())$companyPendingQuery->where('timesheets.branch_id',$request->user()->activeBranchId('manpower')); $companyPending=$companyPendingQuery->selectRaw('employees.company_id, COUNT(*) total')->groupBy('employees.company_id')->pluck('total', 'employees.company_id');
         $companyAnalytics = $companies->map(function ($company) use ($companyPayroll, $companyPending) { return ['company'=>$company,'employees'=>$company->employees_count,'payroll'=>(int)($companyPayroll[$company->id]??0),'pending'=>(int)($companyPending[$company->id]??0)]; })->sortByDesc('employees')->take(8)->values();
         $trend = collect(range(5, 0))->map(function ($offset) use ($period, $request) {
             $point = $period->copy()->subMonths($offset); $key = $point->format('Y-m'); $start=$point->copy()->startOfMonth()->format('Y-m-d'); $end=$point->copy()->endOfMonth()->format('Y-m-d');
-            $hoursQuery = Timesheet::whereIn('employee_id', Access::employees()->select('id'))->where('status','approved')->whereBetween('work_date',[$start,$end]); if(!$request->user()->isSuperAdmin())$hoursQuery->where('company_id',$request->user()->company_id); if($request->user()->isBranchUser())$hoursQuery->where('branch_id',$request->user()->branch_id); $hours=$hoursQuery->sum(DB::raw('regular_units + overtime_units'));
+            $hoursQuery = Timesheet::whereIn('employee_id', Access::employees()->select('id'))->where('status','approved')->whereBetween('work_date',[$start,$end]); if(!$request->user()->isSuperAdmin())$hoursQuery->where('company_id',$request->user()->company_id); if($request->user()->isBranchUser())$hoursQuery->where('branch_id',$request->user()->activeBranchId('manpower')); $hours=$hoursQuery->sum(DB::raw('regular_units + overtime_units'));
             $pay = Payroll::where('month',$key)->whereIn('employee_id',Access::employees()->select('id'));
             return ['month'=>$key,'label'=>$point->format('M'),'hours'=>(int)$hours,'payroll'=>(int)$pay->sum('net_pay_cents')];
         });
@@ -74,7 +74,7 @@ class DashboardController extends Controller
         ];
         $safetyShopAnalytics=$safetyShopDefaults;
         $safetyShopStockAnalytics=$safetyShopDefaults;
-        if(config('safety_shop.enabled') && $request->user()->isSuperAdmin()){
+        if(!$request->routeIs('manpower.*') && config('safety_shop.enabled') && $request->user()->isSuperAdmin()){
             $financial=app(FinancialReport::class)->build(['from'=>$monthStart,'to'=>$monthEnd]);
             $safetyShopAnalytics=$financial['summary']+[
                 'products'=>Product::where('is_active',true)->count(),
@@ -84,7 +84,7 @@ class DashboardController extends Controller
                 'customers'=>SafetyShopCustomer::where('is_active',true)->count(),
             ];
         }
-        if(config('safety_shop.enabled') && $request->user()->canApprove() && !$request->user()->isSuperAdmin()){
+        if(!$request->routeIs('manpower.*') && config('safety_shop.enabled') && $request->user()->canApprove() && !$request->user()->isSuperAdmin()){
             $companyId=$request->user()->company_id;
             $financial=app(FinancialReport::class)->build(['from'=>$monthStart,'to'=>$monthEnd,'company_id'=>$companyId]);
             $inventory=[
@@ -104,5 +104,5 @@ class DashboardController extends Controller
         $combinedRevenue['revenue']=$combinedRevenue['manpower_revenue']+$combinedRevenue['shop_revenue'];$combinedRevenue['profit']=($combinedRevenue['manpower_revenue']-$combinedRevenue['manpower_cost']-$combinedRevenue['company_cost'])+$combinedRevenue['shop_profit'];
         return view('dashboard', compact('month', 'stats', 'previous', 'changes', 'recent', 'pending', 'companies', 'companyAnalytics', 'trend', 'maxHours', 'maxPayroll', 'invoiceStats','safetyShopAnalytics','safetyShopStockAnalytics','combinedRevenue'));
     }
-    private function scopedRentalMonthly(Request $request,string $month){$q=Payroll::where('month',$month)->where('employment_type','rental');if(!$request->user()->isSuperAdmin())$q->where('company_id',$request->user()->company_id);if($request->user()->isBranchUser())$q->where('branch_id',$request->user()->branch_id);return $q;}
+    private function scopedRentalMonthly(Request $request,string $month){$q=Payroll::where('month',$month)->where('employment_type','rental');if(!$request->user()->isSuperAdmin())$q->where('company_id',$request->user()->company_id);if($request->user()->isBranchUser())$q->where('branch_id',$request->user()->activeBranchId('manpower'));return $q;}
 }

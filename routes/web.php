@@ -14,8 +14,12 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::middleware('guest')->group(function () {
-    Route::get('/login', [\App\Http\Controllers\AuthController::class, 'form'])->name('login');
-    Route::post('/login', [\App\Http\Controllers\AuthController::class, 'login'])->middleware('throttle:5,1')->name('login.submit');
+    Route::get('/login', function () { return redirect()->route('manpower.login'); })->name('login');
+    Route::post('/login', [\App\Http\Controllers\AuthController::class, 'login'])->defaults('module','manpower')->middleware('throttle:5,1')->name('login.submit');
+    Route::get('/manpower/login', [\App\Http\Controllers\AuthController::class, 'form'])->defaults('module','manpower')->name('manpower.login');
+    Route::post('/manpower/login', [\App\Http\Controllers\AuthController::class, 'login'])->defaults('module','manpower')->middleware('throttle:5,1')->name('manpower.login.submit');
+    Route::get('/safety-shop/login', [\App\Http\Controllers\AuthController::class, 'form'])->defaults('module','safety-shop')->name('safety-shop.login');
+    Route::post('/safety-shop/login', [\App\Http\Controllers\AuthController::class, 'login'])->defaults('module','safety-shop')->middleware('throttle:5,1')->name('safety-shop.login.submit');
 });
 Route::get('/superadmin/login', [\App\Http\Controllers\SuperAdminAuthController::class, 'form'])->name('superadmin.login');
 Route::post('/superadmin/login', [\App\Http\Controllers\SuperAdminAuthController::class, 'login'])->middleware('throttle:5,1')->name('superadmin.login.submit');
@@ -25,57 +29,13 @@ Route::get('/superadmin', function () {
     return redirect()->route('companies.index');
 })->name('superadmin.index');
 Route::middleware(['auth', 'active', 'auth.session', 'saas.subscription'])->group(function () {
-    Route::get('/', [\App\Http\Controllers\DashboardController::class, 'index'])->middleware('operational')->name('dashboard');
+    Route::get('/', function () { return redirect()->route(session('active_module') === 'safety-shop' ? 'safety-shop.index' : 'manpower.index'); })->middleware('operational')->name('dashboard');
     Route::post('/logout', [\App\Http\Controllers\AuthController::class, 'logout'])->name('logout');
+    Route::post('/manpower/logout', [\App\Http\Controllers\AuthController::class, 'logout'])->defaults('module','manpower')->name('manpower.logout');
+    Route::post('/safety-shop/logout', [\App\Http\Controllers\AuthController::class, 'logout'])->defaults('module','safety-shop')->name('safety-shop.logout');
     Route::get('/profile', [\App\Http\Controllers\AuthController::class, 'profile'])->name('profile');
     Route::put('/profile/password', [\App\Http\Controllers\AuthController::class, 'password'])->name('profile.password');
     Route::get('/company-logos/{company}', [\App\Http\Controllers\LookupController::class, 'logo'])->name('companies.logo');
-    Route::middleware(\App\Http\Middleware\EnsureManpowerEnabled::class)->group(function () {
-    Route::get('/employee-photos/{employee}', [\App\Http\Controllers\EmployeeController::class, 'photo'])->middleware('operational')->name('employees.photo');
-    Route::post('/employees/{employee}/advances', [\App\Http\Controllers\EmployeeAdvanceController::class, 'store'])->middleware('operational')->name('employees.advances.store');
-    foreach (['rental' => 'employees', 'own' => 'own-employees'] as $workforce => $prefix) {
-        $controller = \App\Http\Controllers\EmployeeController::class;
-        Route::get('/'.$prefix, [$controller, 'index'])->middleware('operational')->defaults('workforce', $workforce)->name($prefix.'.index');
-        Route::get('/'.$prefix.'/create', [$controller, 'create'])->middleware('operational')->defaults('workforce', $workforce)->name($prefix.'.create');
-        Route::get('/'.$prefix.'/{employee}/cv', [$controller, 'cv'])->middleware('operational')->defaults('workforce', $workforce)->name($prefix.'.cv');
-        Route::post('/'.$prefix, [$controller, 'store'])->middleware('operational')->defaults('workforce', $workforce)->name($prefix.'.store');
-        Route::get('/'.$prefix.'/{employee}', [$controller, 'show'])->middleware('operational')->defaults('workforce', $workforce)->name($prefix.'.show');
-        Route::get('/'.$prefix.'/{employee}/edit', [$controller, 'edit'])->middleware('operational')->defaults('workforce', $workforce)->name($prefix.'.edit');
-        Route::put('/'.$prefix.'/{employee}', [$controller, 'update'])->middleware('operational')->defaults('workforce', $workforce)->name($prefix.'.update');
-        Route::delete('/'.$prefix.'/{employee}', [$controller, 'destroy'])->middleware(['operational','company_admin'])->defaults('workforce', $workforce)->name($prefix.'.destroy');
-    }
-    Route::middleware('operational')->group(function () {
-    foreach (['rental' => 'timesheets', 'own' => 'attendance'] as $workforce => $prefix) {
-        $controller = \App\Http\Controllers\TimesheetController::class;
-        Route::get('/'.$prefix.'/bulk', [$controller, 'bulk'])->middleware('operational')->defaults('workforce', $workforce)->name($prefix.'.bulk');
-        Route::post('/'.$prefix.'/bulk', [$controller, 'storeBulk'])->middleware('operational')->defaults('workforce', $workforce)->name($prefix.'.bulk.store');
-        Route::post('/'.$prefix.'/bulk-approve', [$controller, 'bulkApprove'])->middleware(['operational','approver'])->defaults('workforce', $workforce)->name($prefix.'.bulk.approve');
-        Route::get('/'.$prefix, [$controller, 'index'])->defaults('workforce', $workforce)->name($prefix.'.index');
-        Route::get('/'.$prefix.'/export/pdf', [$controller, 'pdf'])->defaults('workforce', $workforce)->name($prefix.'.pdf');
-        Route::get('/'.$prefix.'/employee/{employee}/timesheet-pdf', [$controller, 'employeePdfForm'])->defaults('workforce', $workforce)->name($prefix.'.employee.pdf.form');
-        Route::post('/'.$prefix.'/employee/{employee}/timesheet-pdf', [$controller, 'employeePdf'])->defaults('workforce', $workforce)->name($prefix.'.employee.pdf');
-        Route::get('/'.$prefix.'/create', [$controller, 'create'])->defaults('workforce', $workforce)->name($prefix.'.create');
-        Route::post('/'.$prefix, [$controller, 'store'])->defaults('workforce', $workforce)->name($prefix.'.store');
-        Route::get('/'.$prefix.'/{timesheet}/edit', [$controller, 'edit'])->middleware('approver')->defaults('workforce', $workforce)->name($prefix.'.edit');
-        Route::put('/'.$prefix.'/{timesheet}', [$controller, 'update'])->middleware('approver')->defaults('workforce', $workforce)->name($prefix.'.update');
-        Route::delete('/'.$prefix.'/{timesheet}', [$controller, 'destroy'])->middleware('approver')->defaults('workforce', $workforce)->name($prefix.'.destroy');
-        Route::post('/'.$prefix.'/{timesheet}/review', [$controller, 'review'])->middleware('approver')->defaults('workforce', $workforce)->name($prefix.'.review');
-    }
-    foreach (['rental' => 'payrolls', 'own' => 'salaries'] as $workforce => $prefix) {
-        $controller = \App\Http\Controllers\PayrollController::class;
-        Route::get('/'.$prefix, [$controller, 'index'])->defaults('workforce', $workforce)->name($prefix.'.index');
-        Route::get('/'.$prefix.'/export', [$controller, 'export'])->defaults('workforce', $workforce)->name($prefix.'.export');
-        Route::post('/'.$prefix.'/bulk-approve', [$controller, 'bulkApprove'])->middleware('approver')->defaults('workforce', $workforce)->name($prefix.'.bulk.approve');
-        Route::get('/'.$prefix.'/{payroll}/pdf', [$controller, 'pdf'])->defaults('workforce', $workforce)->name($prefix.'.pdf');
-        Route::get('/'.$prefix.'/{payroll}', [$controller, 'show'])->defaults('workforce', $workforce)->name($prefix.'.show');
-        Route::post('/'.$prefix, [$controller, 'store'])->defaults('workforce', $workforce)->name($prefix.'.store');
-        Route::put('/'.$prefix.'/{payroll}', [$controller, 'update'])->middleware('company_admin')->defaults('workforce', $workforce)->name($prefix.'.update');
-        Route::post('/'.$prefix.'/{payroll}/paid', [$controller, 'paid'])->middleware('company_admin')->defaults('workforce', $workforce)->name($prefix.'.paid');
-        Route::post('/'.$prefix.'/{payroll}/approve', [$controller, 'approve'])->middleware('approver')->defaults('workforce', $workforce)->name($prefix.'.approve');
-        Route::delete('/'.$prefix.'/{payroll}', [$controller, 'destroy'])->middleware('company_admin')->defaults('workforce', $workforce)->name($prefix.'.destroy');
-    }
-    });
-    });
     Route::middleware(['operational','approver'])->group(function () {
         Route::get('/audit-report', [\App\Http\Controllers\AuditReportController::class, 'index'])->name('audit.index');
         Route::get('/audit-report/export.csv', [\App\Http\Controllers\AuditReportController::class, 'csv'])->name('audit.csv');
@@ -83,15 +43,6 @@ Route::middleware(['auth', 'active', 'auth.session', 'saas.subscription'])->grou
     });
     Route::prefix('company')->name('company-users.')->middleware('company_admin')->group(function () {
         Route::resource('team', \App\Http\Controllers\UserController::class)->except(['show'])->parameters(['team'=>'user'])->names(['index'=>'index','create'=>'create','store'=>'store','edit'=>'edit','update'=>'update','destroy'=>'destroy']);
-    });
-    Route::prefix('company')->middleware(['company_admin','operational',\App\Http\Middleware\EnsureManpowerEnabled::class])->group(function () {
-        $controller=\App\Http\Controllers\LookupController::class;
-        Route::get('/designations',[$controller,'index'])->defaults('lookup','designations')->name('designations.index');
-        Route::get('/designations/create',[$controller,'create'])->defaults('lookup','designations')->name('designations.create');
-        Route::post('/designations',[$controller,'store'])->defaults('lookup','designations')->name('designations.store');
-        Route::get('/designations/{id}/edit',[$controller,'edit'])->defaults('lookup','designations')->name('designations.edit');
-        Route::put('/designations/{id}',[$controller,'update'])->defaults('lookup','designations')->name('designations.update');
-        Route::delete('/designations/{id}',[$controller,'destroy'])->defaults('lookup','designations')->name('designations.destroy');
     });
     Route::prefix('superadmin')->middleware('super_admin')->group(function () {
         Route::post('/logout', [\App\Http\Controllers\SuperAdminAuthController::class, 'logout'])->name('superadmin.logout');
@@ -139,5 +90,7 @@ Route::middleware(['auth', 'active', 'auth.session', 'saas.subscription'])->grou
 });
 
 require __DIR__.'/safety_shop.php';
+require __DIR__.'/manpower.php';
 require __DIR__.'/document_library.php';
 require __DIR__.'/commercial_documents.php';
+require __DIR__.'/manpower_legacy.php';

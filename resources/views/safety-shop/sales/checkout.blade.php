@@ -13,6 +13,16 @@
 <input type="hidden" name="request_key" value="{{ $requestKey }}">
 @if($replacement)<input type="hidden" name="replacement_of_id" value="{{ $replacement->id }}">@endif
 @if(isset($draft) && $draft)<input type="hidden" name="draft_id" value="{{ $draft->id }}">@endif
+@if(!$editingSale)
+<div class="notice info" style="margin-bottom:18px">
+<label style="display:flex;align-items:center;gap:10px;font-weight:700"><input id="checkout-from-quotation" type="checkbox"> Invoice from approved quotation</label>
+<div id="checkout-quotation-panel" class="field" style="margin-top:12px" hidden>
+<label for="checkout-quotation">Select quotation</label>
+<select id="checkout-quotation" name="quotation_id" data-url-template="{{ route('safety-shop.sales.quotation','__ID__') }}"><option value="">Choose an approved quotation...</option>@foreach($quotations as $quotation)<option value="{{ $quotation->id }}">{{ $quotation->number }} · {{ $quotation->customer->name }} · SAR {{ \App\Services\Pay::money($quotation->total_cents) }}</option>@endforeach</select>
+<small>The customer, quoted products, quantities, prices, VAT and notes will be loaded. Review everything before saving the draft or finalizing.</small>
+</div>
+</div>
+@elseif(data_get($initialCheckout,'quotation_id'))<input type="hidden" name="quotation_id" value="{{ data_get($initialCheckout,'quotation_id') }}">@endif
 <div class="form-grid">
 <div class="field"><label>Shop location</label><div><strong>{{ $shopLocation->name }}</strong></div><input id="checkout-location" name="location_id" type="hidden" value="{{ $shopLocation->id }}"></div>
 <div class="field"><label for="checkout-supply-date">Supply date *</label><input id="checkout-supply-date" name="supply_date" type="date" max="{{ now()->toDateString() }}" value="{{ old('supply_date',optional(optional($editingSale)->supply_date)->toDateString() ?: now()->toDateString()) }}" required><small>Defaults to today. Change it when the goods were supplied on an earlier date.</small></div>

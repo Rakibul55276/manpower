@@ -22,7 +22,16 @@ class RedirectIfAuthenticated
 
         foreach ($guards as $guard) {
             if (Auth::guard($guard)->check()) {
-                return redirect()->route(config('safety_shop.enabled') ? 'safety-shop.index' : 'dashboard');
+                $requestedModule=$request->route('module');
+                $activeModule=$request->session()->get('active_module');
+                if ($requestedModule && $activeModule && $requestedModule !== $activeModule) {
+                    Auth::guard($guard)->logout();
+                    $request->session()->invalidate();
+                    $request->session()->regenerateToken();
+                    return $next($request);
+                }
+                $module=$requestedModule ?: ($activeModule ?: 'manpower');
+                return redirect()->route($module==='safety-shop'?'safety-shop.index':'manpower.index');
             }
         }
 

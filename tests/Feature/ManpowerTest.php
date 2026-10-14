@@ -64,11 +64,21 @@ class ManpowerTest extends TestCase
     {
         return $this->actingAs($this->admin)->post(route($prefix.'.store'), array_merge(['employee_id' => $employee->id, 'month' => now()->format('Y-m'), 'allowance' => '1.00', 'deduction' => '0.50'], $overrides));
     }
+    public function test_manpower_has_an_isolated_url_space_with_legacy_redirects()
+    {
+        config(['manpower.enabled'=>true, 'safety_shop.enabled'=>true]);
+        $this->assertStringContainsString('/manpower/employees', route('employees.index'));
+        $this->assertStringContainsString('/manpower/timesheets', route('timesheets.index'));
+        $this->assertStringContainsString('/manpower/payrolls', route('payrolls.index'));
+        $this->actingAs($this->manager)->get(route('manpower.index'))->assertOk()->assertSee('Manpower module')->assertDontSee('Safety Shop analytics')->assertDontSee('Safety Shop summary');
+        $this->get('/employees?status=active')->assertStatus(308)->assertRedirect(url('manpower/employees').'?status=active');
+        $this->get('/company/designations')->assertStatus(308)->assertRedirect(url('manpower/company/designations'));
+    }
     public function test_login_and_disabled_accounts()
     {
         $this->get(route('login'))->assertOk();
         $this->post(route('login.submit'), ['username' => $this->manager->username, 'password' => 'wrong'])->assertSessionHasErrors('username');
-        $this->post(route('login.submit'), ['username' => $this->manager->username, 'password' => 'A-secure-password'])->assertRedirect(route('dashboard'));
+        $this->post(route('login.submit'), ['username' => $this->manager->username, 'password' => 'A-secure-password'])->assertRedirect(route('manpower.index'));
         $this->assertAuthenticatedAs($this->manager);
         $this->manager->update(['is_active' => false]);
         $this->actingAs($this->manager->fresh());
@@ -79,7 +89,7 @@ class ManpowerTest extends TestCase
     public function test_company_admin_login_redirects_to_dashboard_instead_of_super_admin_shop_home()
     {
         $this->post(route('login.submit'), ['username'=>$this->approver->username,'password'=>'A-secure-password'])
-            ->assertRedirect(route('dashboard'));
+            ->assertRedirect(route('manpower.index'));
         $this->assertAuthenticatedAs($this->approver);
         $this->get(route('dashboard'))->assertOk();
     }

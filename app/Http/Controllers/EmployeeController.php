@@ -130,9 +130,9 @@ class EmployeeController extends Controller
     public function show(Employee $employee)
     {
         $this->check($employee); $employee->load(['company', 'branch', 'designation']);
-        $timesheets = $employee->timesheets()->when(auth()->user()->isBranchUser(),fn($q)=>$q->where('branch_id',auth()->user()->branch_id))->latest('work_date')->limit(10)->get();
+        $timesheets = $employee->timesheets()->when(auth()->user()->isBranchUser(),fn($q)=>$q->where('branch_id',auth()->user()->activeBranchId('manpower')))->latest('work_date')->limit(10)->get();
         $salaryQuery = $employee->payrolls()->latest('month');
-        if(auth()->user()->isBranchUser())$salaryQuery->where('branch_id',auth()->user()->branch_id);
+        if(auth()->user()->isBranchUser())$salaryQuery->where('branch_id',auth()->user()->activeBranchId('manpower'));
         $payrolls = $salaryQuery->limit(6)->get();
         $advances = $employee->advances()->with('repayments')->latest('advance_date')->get();
         $advanceBalance = $advances->sum('balance_cents');

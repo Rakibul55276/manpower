@@ -4,6 +4,7 @@ namespace App\Modules\DocumentLibrary\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
+use App\Models\Branch;
 use App\Models\User;
 use App\Modules\DocumentLibrary\Models\LibraryDocument;
 use Illuminate\Http\Request;
@@ -15,8 +16,7 @@ class DocumentLibraryController extends Controller
     public function index(Request $request)
     {
         $query = LibraryDocument::with(['owner', 'uploader'])->latest('id');
-        if ($request->user()->isCompanyAdmin()) $query->whereHas('owner',fn($owner)=>$owner->where('company_id',$request->user()->company_id));
-        elseif (!$request->user()->isSuperAdmin()) $query->where('owner_id', $request->user()->id);
+        $this->scopeQuery($request, $query);
         if ($request->filled('search')) {
             $search = trim($request->search);
             $query->where(function ($q) use ($search) {
@@ -30,8 +30,10 @@ class DocumentLibraryController extends Controller
 
         return view('document-library.index', [
             'documents' => $query->paginate(20)->withQueryString(),
-            'categories' => LibraryDocument::whereNotNull('category')->distinct()->orderBy('category')->pluck('category'),
+            'categories' => tap(LibraryDocument::query(), fn($categories) => $this->scopeQuery($request, $categories))->whereNotNull('category')->distinct()->orderBy('category')->pluck('category'),
             'users' => $request->user()->isSuperAdmin() ? User::where('is_active', true)->orderBy('name')->get() : collect(),
+            'documentRoutePrefix' => $this->routePrefix($request),
+            'documentModule' => $this->module($request),
         ]);
     }
 
@@ -40,19 +42,26 @@ class DocumentLibraryController extends Controller
         return view('document-library.form', [
             'document' => new LibraryDocument,
             'users' => $request->user()->isSuperAdmin() ? User::where('is_active', true)->orderBy('name')->get() : collect(),
+            'branches' => $this->branches($request),
+            'documentRoutePrefix' => $this->routePrefix($request),
+            'documentModule' => $this->module($request),
         ]);
     }
 
     public function store(Request $request)
     {
         $data = $this->validateDocument($request, true);
-        $ownerId = $request->user()->isSuperAdmin() ? ($data['owner_id'] ?? $request->user()->id) : $request->user()->id;
+        $ownerId = $request->user()->id;
+        $branchId = $request->user()->isCompanyAdmin() ? ($data['branch_id'] ?? null) : $request->user()->activeBranchId($this->module($request));
         $file = $request->file('scan');
-        $path = $file->store('document-library/'.$ownerId, 'local');
+        $path = $file->store('document-library/'.$this->module($request).'/'.$request->user()->company_id.'/'.($branchId ?: 'company'), 'local');
         try {
             $document = LibraryDocument::create([
                 'owner_id' => $ownerId,
                 'uploaded_by' => $request->user()->id,
+                'company_id' => $request->user()->company_id,
+                'module' => $this->module($request),
+                'branch_id' => $branchId,
                 'title' => $data['title'],
                 'category' => $data['category'] ?? null,
                 'document_number' => $data['document_number'] ?? null,
@@ -70,7 +79,7 @@ class DocumentLibraryController extends Controller
         }
         ActivityLog::record('Uploaded library document', $document->title);
 
-        return redirect()->route('document-library.show', $document)->with('success', 'Scanned document uploaded securely.');
+        return redirect()->route($this->routePrefix($request).'.show', $document)->with('success', 'Scanned document uploaded securely.');
     }
 
     public function show(Request $request, LibraryDocument $document)
@@ -78,7 +87,7 @@ class DocumentLibraryController extends Controller
         $this->authorizeDocument($request, $document);
         $document->load(['owner', 'uploader']);
 
-        return view('document-library.show', compact('document'));
+        return view('document-library.show', ['document'=>$document, 'documentRoutePrefix'=>$this->routePrefix($request), 'documentModule'=>$this->module($request)]);
     }
 
     public function edit(Request $request, LibraryDocument $document)
@@ -88,6 +97,9 @@ class DocumentLibraryController extends Controller
         return view('document-library.form', [
             'document' => $document,
             'users' => $request->user()->isSuperAdmin() ? User::where('is_active', true)->orderBy('name')->get() : collect(),
+            'branches' => $this->branches($request),
+            'documentRoutePrefix' => $this->routePrefix($request),
+            'documentModule' => $this->module($request),
         ]);
     }
 
@@ -97,6 +109,7 @@ class DocumentLibraryController extends Controller
         $data = $this->validateDocument($request, false);
         $document->update([
             'owner_id' => $request->user()->isSuperAdmin() ? ($data['owner_id'] ?? $document->owner_id) : $document->owner_id,
+            'branch_id' => $request->user()->isCompanyAdmin() ? ($data['branch_id'] ?? null) : $document->branch_id,
             'title' => $data['title'],
             'category' => $data['category'] ?? null,
             'document_number' => $data['document_number'] ?? null,
@@ -106,7 +119,7 @@ class DocumentLibraryController extends Controller
         ]);
         ActivityLog::record('Updated library document', $document->title);
 
-        return redirect()->route('document-library.show', $document)->with('success', 'Document details updated.');
+        return redirect()->route($this->routePrefix($request).'.show', $document)->with('success', 'Document details updated.');
     }
 
     public function view(Request $request, LibraryDocument $document)
@@ -140,22 +153,23 @@ class DocumentLibraryController extends Controller
         Storage::disk('local')->delete($path);
         ActivityLog::record('Deleted library document', $title);
 
-        return redirect()->route('document-library.index')->with('success', 'Document deleted.');
+        return redirect()->route($this->routePrefix($request).'.index')->with('success', 'Document deleted.');
     }
 
     private function authorizeDocument(Request $request, LibraryDocument $document)
     {
-        if($request->user()->isCompanyAdmin()){
-            abort_unless((int)$document->owner()->value('company_id')===(int)$request->user()->company_id,403);
+        abort_unless((int)$document->company_id === (int)$request->user()->company_id && $document->module === $this->module($request), 403);
+        if($request->user()->isCompanyAdmin() || $request->user()->isSuperAdmin()){
             return;
         }
-        abort_unless($request->user()->isSuperAdmin() || $document->owner_id === $request->user()->id, 403);
+        abort_unless((int)$document->branch_id === (int)$request->user()->activeBranchId($this->module($request)), 403);
     }
 
     private function validateDocument(Request $request, $withFile)
     {
         return $request->validate([
             'owner_id' => [Rule::requiredIf($request->user()->isSuperAdmin()), 'nullable', 'integer', 'exists:users,id'],
+            'branch_id' => [Rule::requiredIf($request->user()->isCompanyAdmin()), 'nullable', 'integer', Rule::exists('branches', 'id')->where('company_id', $request->user()->company_id)],
             'title' => 'required|string|max:180',
             'category' => 'nullable|string|max:100',
             'document_number' => 'nullable|string|max:100',
@@ -164,5 +178,14 @@ class DocumentLibraryController extends Controller
             'notes' => 'nullable|string|max:2000',
             'scan' => [$withFile ? 'required' : 'nullable', 'file', 'mimes:pdf,jpg,jpeg,png,webp', 'max:'.config('document_library.max_upload_kb')],
         ]);
+    }
+
+    private function module(Request $request): string { return $request->route('document_module'); }
+    private function routePrefix(Request $request): string { return $request->route('document_route_prefix'); }
+    private function branches(Request $request) { return Branch::where('company_id', $request->user()->company_id)->where('is_active', true)->orderBy('name')->get(); }
+    private function scopeQuery(Request $request, $query): void
+    {
+        $query->where('company_id', $request->user()->company_id)->where('module', $this->module($request));
+        if (!$request->user()->isCompanyAdmin() && !$request->user()->isSuperAdmin()) $query->where('branch_id', $request->user()->activeBranchId($this->module($request)));
     }
 }

@@ -37,7 +37,7 @@ class AuditReportController extends Controller
         }
         if ($filters['report'] === 'timesheets') {
             $query = Timesheet::with(['employee.company', 'employee.designation', 'creator', 'reviewer'])->whereIn('employee_id', Access::employees()->select('id'))->whereBetween('work_date', [$filters['from'], $filters['to']]);
-            if(!auth()->user()->isSuperAdmin())$query->where('company_id',auth()->user()->company_id); if(auth()->user()->isBranchUser())$query->where('branch_id',auth()->user()->branch_id);
+            if(!auth()->user()->isSuperAdmin())$query->where('company_id',auth()->user()->company_id); if(auth()->user()->isBranchUser())$query->where('branch_id',auth()->user()->activeBranchId('manpower'));
             $this->relatedEmployeeFilters($query, $filters);
             if (!empty($filters['status'])) $query->where('status', $filters['status']);
             if (!empty($filters['search'])) $query->whereHas('employee', function ($q) use ($filters) { $q->where('name', 'like', '%'.$filters['search'].'%')->orWhere('iqama_number', 'like', '%'.$filters['search'].'%'); });
@@ -77,7 +77,7 @@ class AuditReportController extends Controller
             return [$filters,$query];
         }
         $query = ActivityLog::with('user')->whereBetween('created_at', [$filters['from'].' 00:00:00', $filters['to'].' 23:59:59']);
-        $userIds=User::where('company_id',auth()->user()->company_id)->when(auth()->user()->isBranchUser(),fn($q)=>$q->where('branch_id',auth()->user()->branch_id))->pluck('id')->push(auth()->id())->unique();
+        $userIds=User::where('company_id',auth()->user()->company_id)->when(auth()->user()->isBranchUser(),fn($q)=>$q->where('branch_id',auth()->user()->activeBranchId('manpower')))->pluck('id')->push(auth()->id())->unique();
         $query->whereIn('user_id',$userIds);
         if (!empty($filters['user_id'])) $query->where('user_id', $filters['user_id']);
         if (!empty($filters['action'])) $query->where('action', $filters['action']);
@@ -141,7 +141,7 @@ class AuditReportController extends Controller
         $summary = $this->summary($query, $filters['report']);
         $records = $query->latest($this->orderColumn($filters['report']))->paginate(30)->withQueryString();
         $rows = $records->map(fn ($record) => $this->row($record, $filters['report']));
-        $users = User::where('company_id',auth()->user()->company_id)->when(auth()->user()->isBranchUser(),fn($q)=>$q->where('branch_id',auth()->user()->branch_id))->orderBy('name')->get();
+        $users = User::where('company_id',auth()->user()->company_id)->when(auth()->user()->isBranchUser(),fn($q)=>$q->where('branch_id',auth()->user()->activeBranchId('manpower')))->orderBy('name')->get();
         $actions = $filters['report']==='stock_movements' ? collect(['receipt','issue','return','adjustment','transfer']) : ActivityLog::whereIn('user_id',$users->pluck('id')->push(auth()->id())->unique())->distinct()->orderBy('action')->pluck('action');
         $companies = Access::companies()->orderBy('name')->get();
         $locations = auth()->user()->isCompanyAdmin()?Master::where('company_id',auth()->user()->company_id)->where('type','location')->orderBy('name')->get():collect();

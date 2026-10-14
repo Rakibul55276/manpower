@@ -29,6 +29,10 @@
     const saveDraft = document.getElementById('checkout-save-draft');
     const message = document.getElementById('checkout-message');
     const add = document.getElementById('checkout-add');
+    const fromQuotation = document.getElementById('checkout-from-quotation');
+    const quotationPanel = document.getElementById('checkout-quotation-panel');
+    const quotationSelect = document.getElementById('checkout-quotation');
+    const invoiceNotes = document.getElementById('checkout-invoice-notes');
     const cart = new Map();
     let busy = false;
     let posting = false;
@@ -219,6 +223,37 @@
     barcode.addEventListener('input', queueAutomaticScan);
     barcode.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); scan(); } });
     add.addEventListener('click', event => { event.preventDefault(); scan(); });
+    if (fromQuotation && quotationSelect) {
+        fromQuotation.addEventListener('change', () => {
+            quotationPanel.hidden = !fromQuotation.checked;
+            if (!fromQuotation.checked) quotationSelect.value = '';
+            else quotationSelect.focus();
+        });
+        quotationSelect.addEventListener('change', async () => {
+            if (!quotationSelect.value) return;
+            busy = true; payment(); message.textContent = 'Loading quotation...';
+            try {
+                const url = new URL(quotationSelect.dataset.urlTemplate.replace('__ID__', quotationSelect.value), window.location.href);
+                url.searchParams.set('location_id', location.value);
+                const response = await fetch(url, {headers: {'Accept': 'application/json'}, credentials: 'same-origin'});
+                const payload = await response.json();
+                if (!response.ok) throw new Error(payload.message || 'Unable to load this quotation.');
+                cart.clear();
+                payload.lines.forEach(item => cart.set(item.id, item));
+                savedCustomer.value = String(payload.customer_id || '');
+                savedCustomer.dispatchEvent(new Event('change'));
+                taxRate.value = Number(payload.tax_rate || 15).toFixed(2);
+                if (invoiceNotes && payload.notes) invoiceNotes.value = payload.notes.slice(0, 250);
+                render();
+                const insufficient = payload.lines.filter(item => item.quantity > item.available);
+                message.textContent = insufficient.length
+                    ? `${payload.number} loaded. ${insufficient.length} item(s) exceed available stock; adjust stock or quantity before finalizing.`
+                    : `${payload.number} loaded. Review the invoice before saving or finalizing.`;
+            } catch (error) {
+                cart.clear(); render(); message.textContent = error.message;
+            } finally { busy = false; payment(); }
+        });
+    }
     location.addEventListener('change', () => { cart.clear(); render(); message.textContent = 'Location changed. Scan products for this location.'; barcode.focus(); });
     [discount, taxRate].forEach(field => field.addEventListener('input', payment));
     form.addEventListener('keydown', event => { if (event.key === 'Enter' && event.target !== submit) event.preventDefault(); });

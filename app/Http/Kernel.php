@@ -64,6 +64,7 @@ class Kernel extends HttpKernel
         'shop_operator' => \App\Http\Middleware\SafetyShopOperator::class,
         'user_admin' => \App\Http\Middleware\UserAdministrator::class,
         'operational' => \App\Http\Middleware\EnsureOperationalAccess::class,
+        'module' => \App\Http\Middleware\EnsureModuleContext::class,
         'saas.subscription' => \App\Http\Middleware\EnsureSaasSubscription::class,
         'auth' => \App\Http\Middleware\Authenticate::class,
         'auth.basic' => \Illuminate\Auth\Middleware\AuthenticateWithBasicAuth::class,

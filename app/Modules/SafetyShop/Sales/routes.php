@@ -5,6 +5,7 @@ use App\Modules\SafetyShop\Sales\Http\Controllers\ReturnController;
 Route::prefix('sales')->name('sales.')->group(function () {
     Route::get('/',[SaleController::class,'index'])->name('index');
     Route::get('/checkout',[SaleController::class,'create'])->middleware('shop_operator')->name('create');
+    Route::get('/quotation/{quotation}',[SaleController::class,'quotationData'])->middleware('shop_operator')->whereNumber('quotation')->name('quotation');
     Route::post('/',[SaleController::class,'store'])->middleware('shop_operator')->name('store');
     Route::get('/{sale}/draft',[SaleController::class,'editDraft'])->middleware('shop_operator')->whereNumber('sale')->name('draft');
     Route::post('/{sale}/payments',[SaleController::class,'recordPayment'])->middleware('shop_operator')->whereNumber('sale')->name('payments.store');

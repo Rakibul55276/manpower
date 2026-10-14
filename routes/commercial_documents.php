@@ -3,7 +3,7 @@
 use App\Http\Controllers\CommercialDocumentController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth', 'active', 'auth.session', 'saas.subscription', 'operational'])->group(function () {
+Route::middleware(['auth', 'active', 'auth.session', 'saas.subscription', 'operational', 'module:safety-shop', \App\Http\Middleware\EnsureSafetyShopEnabled::class])->prefix('safety-shop')->group(function () {
     foreach (['quotation' => 'quotations', 'delivery_note' => 'delivery-notes'] as $type => $prefix) {
         Route::prefix($prefix)->name($prefix.'.')->group(function () use ($type) {
             Route::get('/', [CommercialDocumentController::class, 'index'])->defaults('document_type', $type)->name('index');

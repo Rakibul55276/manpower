@@ -10,9 +10,11 @@ use RuntimeException;
 use Throwable;
 class AuthController extends Controller
 {
-    public function form() { return view('auth.login'); }
+    public function form(Request $request) { $module=$request->route('module','manpower'); abort_unless(in_array($module,['manpower','safety-shop'],true),404); return view('auth.login',compact('module')); }
     public function login(Request $request)
     {
+        $module=$request->route('module','manpower');abort_unless(in_array($module,['manpower','safety-shop'],true),404);
+        abort_unless((bool)config($module==='safety-shop'?'safety_shop.enabled':'manpower.enabled'),404);
         $data = $request->validate(['company_code'=>['required','string','max:30','regex:/^[A-Za-z0-9][A-Za-z0-9_-]+$/'],'username' => 'required|string', 'password' => 'required|string']);
         $code=strtoupper($data['company_code']);
         $company=Company::where('company_code',$code)->where('is_active',true)->first();
@@ -25,20 +27,26 @@ class AuthController extends Controller
         }
         $request->session()->regenerate();
         $request->session()->put('tenant_company_code',$code);
+        $request->session()->put('active_module',$module);
         if ($request->user()->isSuperAdmin()) {
             Auth::logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();
             return back()->withErrors(['username'=>'System owners must use the Superadmin portal.'])->withInput($request->only('username'));
         }
+        if (!$request->user()->canAccessModule($module)) {
+            Auth::logout(); $request->session()->invalidate(); $request->session()->regenerateToken();
+            return back()->withErrors(['username'=>'This account is not assigned to the selected module.'])->withInput($request->only('company_code','username'));
+        }
         ActivityLog::record('Signed in', $request->user()->name);
-        $destination = $request->user()->isSuperAdmin() ? route('superadmin.index') : route('dashboard');
+        $destination = $request->user()->isSuperAdmin() ? route('superadmin.index') : route($module==='safety-shop'?'safety-shop.index':'manpower.index');
         return redirect()->intended($destination);
     }
     public function logout(Request $request)
     {
+        $module=$request->route('module') ?: $request->session()->get('active_module','manpower');
         Auth::logout(); $request->session()->invalidate(); $request->session()->regenerateToken();
-        return redirect()->route('login');
+        return redirect()->route($module==='safety-shop'?'safety-shop.login':'manpower.login');
     }
     public function profile() { return view('auth.profile'); }
     public function password(Request $request)

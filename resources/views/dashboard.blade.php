@@ -1,9 +1,10 @@
 @extends('layouts.app')
+@php $manpowerWorkspace=request()->routeIs('manpower.*'); @endphp
 @section('title','Analytics dashboard')
-@section('eyebrow',config('manpower.enabled') ? 'Workforce intelligence' : 'Business intelligence')
-@section('description', (config('manpower.enabled')?'People, productivity, approvals, and payroll':'Enabled business modules').(config('invoicing.enabled')?', invoicing':'').(config('safety_shop.enabled')?', and Safety Shop performance':'').' in one view.')
+@section('eyebrow',$manpowerWorkspace ? 'Manpower module' : (config('manpower.enabled') ? 'Workforce intelligence' : 'Business intelligence'))
+@section('description',$manpowerWorkspace ? 'People, productivity, approvals, attendance, and payroll in one protected workspace.' : ((config('manpower.enabled')?'People, productivity, approvals, and payroll':'Enabled business modules').(config('invoicing.enabled')?', invoicing':'').(config('safety_shop.enabled')?', and Safety Shop performance':'').' in one view.'))
 @section('head')<style>.safety-shop-kpis{grid-template-columns:repeat(5,minmax(0,1fr))}@media(max-width:1250px){.safety-shop-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:760px){.safety-shop-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}</style>@endsection
-@section('actions')<form class="actions" method="GET"><label for="month" class="muted">Analysis month</label><input id="month" type="month" name="month" value="{{ $month }}" style="width:155px"><button class="btn secondary">Apply</button><a href="{{ route('dashboard') }}" class="btn link">Clear filter</a></form>@endsection
+@section('actions')<form class="actions" method="GET"><label for="month" class="muted">Analysis month</label><input id="month" type="month" name="month" value="{{ $month }}" style="width:155px"><button class="btn secondary">Apply</button><a href="{{ $manpowerWorkspace ? route('manpower.index') : route('dashboard') }}" class="btn link">Clear filter</a></form>@endsection
 @section('content')
 @php $monthLabel=\Carbon\Carbon::createFromFormat('!Y-m',$month)->format('F Y'); $changeBadge=function($value){return ($value>=0?'+':'').number_format($value,1).'%';}; @endphp
 @if(config('manpower.enabled'))
@@ -17,11 +18,11 @@
 </div>
 @endif
 
-@if(config('safety_shop.enabled') && auth()->user()->canApprove() && !auth()->user()->isSuperAdmin())
+@if(!$manpowerWorkspace && config('safety_shop.enabled') && auth()->user()->canApprove() && !auth()->user()->isSuperAdmin())
 <div class="card"><div class="card-head"><div><h2>Safety Shop analytics</h2><span class="muted" style="font-size:11px">Company revenue and inventory kept separate from workforce analytics</span></div><a href="{{ route('safety-shop.stock.index') }}">Movement ledger →</a></div><div class="card-body"><div class="mini-metrics"><div><span>Net revenue excl. VAT</span><strong>SAR {{ \App\Services\Pay::money($safetyShopStockAnalytics['net_revenue']) }}</strong></div><div><span>Active products</span><strong>{{ number_format($safetyShopStockAnalytics['products']) }}</strong></div><div><span>Units on hand</span><strong>{{ number_format($safetyShopStockAnalytics['units']) }}</strong></div><div><span>Inventory value</span><strong>SAR {{ \App\Services\Pay::money($safetyShopStockAnalytics['stock_value']) }}</strong></div><div><span>Low stock</span><strong>{{ number_format($safetyShopStockAnalytics['low_stock']) }}</strong></div><div><span>Monthly movements</span><strong>{{ number_format($safetyShopStockAnalytics['movements']) }}</strong></div></div></div></div>
 @endif
 
-@if(config('safety_shop.enabled') && auth()->user()->canApprove() && !auth()->user()->isSuperAdmin())
+@if(!$manpowerWorkspace && config('safety_shop.enabled') && auth()->user()->canApprove() && !auth()->user()->isSuperAdmin())
 <div class="card"><div class="card-head"><div><h2>Safety Shop summary</h2><span class="muted" style="font-size:11px">Company-scoped inventory activity for {{ $monthLabel }}</span></div><a href="{{ route('safety-shop.stock.index') }}">Movement ledger →</a></div><div class="card-body">
 <div class="stats analytics-kpis safety-shop-kpis">
 <a class="stat stat-link" href="{{ route('safety-shop.sales.index') }}"><div class="label">Gross revenue excl. VAT <span class="stat-icon">SAR</span></div><div class="value">{{ \App\Services\Pay::money($safetyShopAnalytics['gross_sales']) }}</div><div class="note">Before discounts and customer refunds</div></a>
@@ -51,8 +52,8 @@
 <div class="card"><div class="card-head"><h2>Recently added people</h2><a href="{{ route('employees.index') }}">All employees →</a></div><div class="card-body">@forelse($recent as $employee)<div class="company-row"><div><a href="{{ route($employee->employment_type==='own'?'own-employees.show':'employees.show',$employee) }}"><strong>{{ $employee->name }}</strong></a><br><small>{{ $employee->designation->name }} · {{ $employee->company->name }}</small></div><span class="badge {{ $employee->status }}">{{ ucfirst($employee->status) }}</span></div>@empty<div class="empty">No employees available.</div>@endforelse</div></div>
 </div></div>
 @endif
-@unless(auth()->user()->isBranchUser())<div class="card"><div class="card-head"><h2>{{ config('manpower.enabled') ? 'Combined monthly revenue' : 'Monthly revenue' }}</h2><span class="badge">{{ $monthLabel }}</span></div><div class="card-body"><div class="mini-metrics">
+@unless(auth()->user()->isBranchUser())<div class="card"><div class="card-head"><h2>{{ $manpowerWorkspace ? 'Manpower monthly revenue' : (config('manpower.enabled') ? 'Combined monthly revenue' : 'Monthly revenue') }}</h2><span class="badge">{{ $monthLabel }}</span></div><div class="card-body"><div class="mini-metrics">
 @if(config('manpower.enabled'))<div><span>Manpower PO revenue</span><strong>SAR {{ \App\Services\Pay::money($combinedRevenue['manpower_revenue']) }}</strong></div><div><span>Employee payroll cost</span><strong>SAR {{ \App\Services\Pay::money($combinedRevenue['manpower_cost']) }}</strong></div><div><span>Company employee cost</span><strong>SAR {{ \App\Services\Pay::money($combinedRevenue['company_cost']) }}</strong></div>@endif
-@if(config('safety_shop.enabled'))<div><span>Safety Shop net revenue</span><strong>SAR {{ \App\Services\Pay::money($combinedRevenue['shop_revenue']) }}</strong></div>@endif
-<div><span>Total revenue</span><strong>SAR {{ \App\Services\Pay::money(config('manpower.enabled') ? $combinedRevenue['revenue'] : $combinedRevenue['shop_revenue']) }}</strong></div><div><span>Profit / loss</span><strong>SAR {{ \App\Services\Pay::money(config('manpower.enabled') ? $combinedRevenue['profit'] : $combinedRevenue['shop_profit']) }}</strong></div></div></div></div>@endunless
+@if(!$manpowerWorkspace && config('safety_shop.enabled'))<div><span>Safety Shop net revenue</span><strong>SAR {{ \App\Services\Pay::money($combinedRevenue['shop_revenue']) }}</strong></div>@endif
+<div><span>Total revenue</span><strong>SAR {{ \App\Services\Pay::money($manpowerWorkspace ? $combinedRevenue['manpower_revenue'] : (config('manpower.enabled') ? $combinedRevenue['revenue'] : $combinedRevenue['shop_revenue'])) }}</strong></div><div><span>Profit / loss</span><strong>SAR {{ \App\Services\Pay::money($manpowerWorkspace ? ($combinedRevenue['manpower_revenue']-$combinedRevenue['manpower_cost']-$combinedRevenue['company_cost']) : (config('manpower.enabled') ? $combinedRevenue['profit'] : $combinedRevenue['shop_profit'])) }}</strong></div></div></div></div>@endunless
 @endsection
