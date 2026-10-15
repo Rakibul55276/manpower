@@ -32,6 +32,7 @@
     const fromQuotation = document.getElementById('checkout-from-quotation');
     const quotationPanel = document.getElementById('checkout-quotation-panel');
     const quotationSelect = document.getElementById('checkout-quotation');
+    const customerPo = document.getElementById('checkout-customer-po');
     const invoiceNotes = document.getElementById('checkout-invoice-notes');
     const cart = new Map();
     let busy = false;
@@ -243,6 +244,8 @@
                 savedCustomer.value = String(payload.customer_id || '');
                 savedCustomer.dispatchEvent(new Event('change'));
                 taxRate.value = Number(payload.tax_rate || 15).toFixed(2);
+                discount.value = Number(payload.discount || 0).toFixed(2);
+                if (customerPo) customerPo.value = payload.customer_po_number || '';
                 if (invoiceNotes && payload.notes) invoiceNotes.value = payload.notes.slice(0, 250);
                 render();
                 const insufficient = payload.lines.filter(item => item.quantity > item.available);

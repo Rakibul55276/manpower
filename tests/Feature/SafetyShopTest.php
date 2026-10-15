@@ -34,6 +34,7 @@ class SafetyShopTest extends TestCase
         $this->destination=Master::create(['company_id'=>$this->company->id,'type'=>'location','name'=>'Warehouse']);
         $this->supplier=Master::create(['company_id'=>$this->company->id,'type'=>'supplier','name'=>'PPE Supplier']);
         $this->product=Product::create(['company_id'=>$this->company->id,'sku'=>'HELMET-01','barcode'=>'001234567890','name'=>'Safety helmet','unit'=>'piece','cost_cents'=>1000,'price_cents'=>2500,'reorder_level'=>3]);
+        \App\Modules\SafetyShop\Shared\Models\ReceiptSetting::create(['company_id'=>$this->company->id,'company_name'=>$this->company->name,'company_name_ar'=>'شركة اختبار متجر السلامة','vat_number'=>'314482276100003','commercial_registration'=>'1010000000','address'=>'Industrial Area','building_number'=>'1000','additional_number'=>'2000','street'=>'King Fahd Road','district'=>'Industrial District','city'=>'Riyadh','postal_code'=>'12345','country_code'=>'SA']);
     }
     private function login($user=null) { $user=$user??$this->admin; return $this->withSession(['password_hash_web'=>$user->getAuthPassword()])->actingAs($user); }
     private function movement($type='receipt',$quantity=10,$extra=[])
@@ -48,8 +49,7 @@ class SafetyShopTest extends TestCase
     public function test_company_arabic_name_overrides_invoice_branding()
     {
         $this->company->update(['name_ar'=>'شركة اختبار السلامة']);
-        \App\Modules\SafetyShop\Shared\Models\ReceiptSetting::create([
-            'company_id'=>$this->company->id,
+        \App\Modules\SafetyShop\Shared\Models\ReceiptSetting::updateOrCreate(['company_id'=>$this->company->id],[
             'company_name'=>$this->company->name,
             'company_name_ar'=>'اسم قديم',
         ]);
@@ -194,7 +194,7 @@ class SafetyShopTest extends TestCase
     {
         $companyAdmin=User::create(['name'=>'Bulk Sales Admin','username'=>'bulk_sales_admin','email'=>'bulk_sales_admin@test.local','password'=>Hash::make('Strong-password-123'),'role'=>'admin','company_id'=>$this->company->id,'is_active'=>true]);
         $this->company->update(['name_ar'=>'شركة متجر السلامة للاختبار']);
-        \App\Modules\SafetyShop\Shared\Models\ReceiptSetting::create(['company_id'=>$this->company->id,'company_name'=>$this->company->name,'vat_number'=>'314482276100003','commercial_registration'=>'7052965014']);
+        \App\Modules\SafetyShop\Shared\Models\ReceiptSetting::updateOrCreate(['company_id'=>$this->company->id],['company_name'=>$this->company->name,'vat_number'=>'314482276100003','commercial_registration'=>'7052965014']);
         $customer=Customer::create(['company_id'=>$this->company->id,'customer_type'=>'company','name'=>'Al Yamama Industrial Services','name_ar'=>'شركة اليمامة للخدمات الصناعية','contact_person'=>'Purchasing Team','phone'=>'+966133632514','vat_number'=>'314716033700003','commercial_registration'=>'2050156215','address'=>'Third Industrial Area, Jubail','country_code'=>'SA','approval_status'=>'approved','approved_by'=>$companyAdmin->id,'approved_at'=>now(),'is_active'=>true]);
         $this->login($companyAdmin);
         $this->post(route('safety-shop.stock.store'),$this->movement('receipt',10))->assertSessionHasNoErrors();
@@ -207,7 +207,10 @@ class SafetyShopTest extends TestCase
         $this->assertSame('شركة اليمامة للخدمات الصناعية',$sale->customer_name_ar);
         $this->get(route('safety-shop.sales.show',$sale))->assertOk()->assertSee('شركة متجر السلامة للاختبار')->assertSee('شركة اليمامة للخدمات الصناعية');
         $response=$this->get(route('safety-shop.sales.pdf',$sale))->assertOk()->assertHeader('Content-Type','application/pdf');
-        $this->assertMatchesRegularExpression('/^INV-[A-Z0-9]{8}$/',$sale->invoice_number);
+        $this->assertMatchesRegularExpression('/^INV-\d{4}-\d{8}$/',$sale->invoice_number);
+        $this->assertSame(1,$sale->invoice_sequence_number);
+        $this->assertSame('standard',$sale->invoice_type);
+        $this->get(route('safety-shop.sales.show',$sale))->assertOk()->assertSee('TAX INVOICE / فاتورة ضريبية')->assertDontSee('SIMPLIFIED TAX INVOICE');
         $this->assertStringContainsString($sale->invoice_number.'.pdf', $response->headers->get('Content-Disposition'));
         $pdf=new \setasign\Fpdi\Fpdi;
         $this->assertSame(1,$pdf->setSourceFile(\setasign\Fpdi\PdfParser\StreamReader::createByString($response->getContent())));
@@ -215,6 +218,72 @@ class SafetyShopTest extends TestCase
         $this->assertCount(9,$sale->fresh()->lines);
         $nineItemResponse=$this->get(route('safety-shop.sales.pdf',$sale))->assertOk()->assertHeader('Content-Type','application/pdf');
         $this->assertSame(2,$pdf->setSourceFile(\setasign\Fpdi\PdfParser\StreamReader::createByString($nineItemResponse->getContent())));
+    }
+    public function test_phase_one_uses_one_controlled_sequence_and_drafts_do_not_consume_it()
+    {
+        $companyAdmin=User::create(['name'=>'Phase One Admin','username'=>'phase_one_admin','email'=>'phase_one_admin@test.local','password'=>Hash::make('Strong-password-123'),'role'=>'admin','company_id'=>$this->company->id,'is_active'=>true]);
+        $this->login($companyAdmin)->post(route('safety-shop.stock.store'),$this->movement('receipt',20))->assertSessionHasNoErrors();
+
+        $this->post(route('safety-shop.sales.store'),$this->sale(1,['submit_action'=>'draft','paid'=>'0.00']))->assertSessionHasNoErrors();
+        $draft=Sale::where('status','draft')->firstOrFail();
+        $this->assertNull($draft->invoice_sequence_number);
+
+        $this->post(route('safety-shop.sales.store'),$this->sale(1,['customer_phone'=>'+966 55 111 1111']))->assertSessionHasNoErrors();
+        $this->post(route('safety-shop.sales.store'),$this->sale(1,['customer_phone'=>'+966 55 222 2222']))->assertSessionHasNoErrors();
+        $finalized=Sale::where('status','finalized')->orderBy('invoice_sequence_number')->get();
+        $this->assertSame([1,2],$finalized->pluck('invoice_sequence_number')->all());
+        $this->assertSame(['INV-0001-00000001','INV-0001-00000002'],$finalized->pluck('invoice_number')->all());
+        $this->assertTrue($finalized->every(fn($sale)=>$sale->invoice_type==='simplified'));
+        $this->get(route('safety-shop.sales.show',$finalized->first()))->assertOk()->assertSee('SIMPLIFIED TAX INVOICE / فاتورة ضريبية مبسطة');
+    }
+    public function test_phase_one_blocks_final_invoice_when_legal_seller_identity_is_incomplete_but_allows_draft()
+    {
+        $companyAdmin=User::create(['name'=>'Phase One Validation Admin','username'=>'phase_one_validation','email'=>'phase_one_validation@test.local','password'=>Hash::make('Strong-password-123'),'role'=>'admin','company_id'=>$this->company->id,'is_active'=>true]);
+        \App\Modules\SafetyShop\Shared\Models\ReceiptSetting::where('company_id',$this->company->id)->update(['vat_number'=>null]);
+        $this->login($companyAdmin)->post(route('safety-shop.stock.store'),$this->movement('receipt',5))->assertSessionHasNoErrors();
+
+        $this->post(route('safety-shop.sales.store'),$this->sale(1,['submit_action'=>'draft','paid'=>'0.00']))->assertSessionHasNoErrors();
+        $this->post(route('safety-shop.sales.store'),$this->sale(1))->assertSessionHasErrors('location_id');
+        $this->assertDatabaseCount('safety_shop_sales',1);
+        $this->assertDatabaseHas('safety_shop_sales',['status'=>'draft']);
+        $this->assertDatabaseCount('safety_shop_invoice_sequences',0);
+    }
+    public function test_zatca_foundation_prepares_immutable_ubl_xml_with_icv_hash_chain_and_no_live_submission()
+    {
+        config(['zatca.enabled'=>true]);
+        $companyAdmin=User::create(['name'=>'ZATCA Admin','username'=>'zatca_admin','email'=>'zatca_admin@test.local','password'=>Hash::make('Strong-password-123'),'role'=>'admin','company_id'=>$this->company->id,'is_active'=>true]);
+        $this->login($companyAdmin)->post(route('safety-shop.stock.store'),$this->movement('receipt',10))->assertSessionHasNoErrors();
+        $this->post(route('safety-shop.sales.store'),$this->sale(1,['customer_phone'=>'+966 55 333 3333']))->assertSessionHasNoErrors();
+        $sale=Sale::where('status','finalized')->firstOrFail();
+
+        $this->get(route('safety-shop.zatca.index'))->assertOk()->assertSee('Live FATOORA connection is disabled')->assertSee($sale->invoice_number);
+        $this->post(route('safety-shop.zatca.prepare',$sale))->assertSessionHasNoErrors()->assertRedirect(route('safety-shop.zatca.index'));
+        $document=\App\Modules\Zatca\Models\ZatcaDocument::firstOrFail();
+        $this->assertSame(1,$document->icv);
+        $this->assertSame('reporting',$document->submission_mode);
+        $this->assertSame('prepared',$document->status);
+        $this->assertSame(64,strlen($document->invoice_hash));
+        $this->assertStringContainsString('urn:oasis:names:specification:ubl:schema:xsd:Invoice-2',$document->unsigned_xml);
+        $this->assertStringContainsString($sale->invoice_number,$document->unsigned_xml);
+        $this->assertStringContainsString($document->uuid,$document->unsigned_xml);
+        $this->assertStringContainsString('name="0200000"',$document->unsigned_xml);
+        $this->assertSame('pending',data_get($document->validation_results,'zatca_sdk.status'));
+
+        $sdk=app(\App\Modules\Zatca\Services\ZatcaSdkService::class);
+        if($sdk->available()){
+            $sdkResult=$sdk->validate($document);
+            $this->assertSame('passed',$sdkResult['status'],trim(($sdkResult['output']??'')."\n".($sdkResult['error']??'')));
+        }
+
+        $this->post(route('safety-shop.zatca.prepare',$sale))->assertSessionHasNoErrors();
+        $this->assertDatabaseCount('zatca_documents',1);
+        $this->get(route('safety-shop.zatca.xml',$document))->assertOk()->assertHeader('Content-Type','application/xml; charset=UTF-8');
+        $this->post(route('safety-shop.zatca.csr'))->assertSessionHasNoErrors();
+        $device=\App\Modules\Zatca\Models\ZatcaDevice::firstOrFail();
+        $this->assertSame('csr_ready',$device->status);
+        $this->assertStringContainsString('BEGIN CERTIFICATE REQUEST',$device->csr);
+        $this->assertNotEmpty($device->getRawOriginal('private_key_encrypted'));
+        $this->assertStringNotContainsString('BEGIN PRIVATE KEY',$device->getRawOriginal('private_key_encrypted'));
     }
     public function test_product_barcode_and_prices_can_be_saved_and_barcode_is_unique()
     {
@@ -304,7 +373,7 @@ class SafetyShopTest extends TestCase
     public function test_discount_vat_and_split_payments_are_calculated_and_printed()
     {
         $this->admin->update(['role'=>'admin','company_id'=>$this->company->id]);
-        \App\Modules\SafetyShop\Shared\Models\ReceiptSetting::create(['company_id'=>$this->company->id,'company_name'=>$this->company->name]);
+        \App\Modules\SafetyShop\Shared\Models\ReceiptSetting::where('company_id',$this->company->id)->update(['company_name'=>$this->company->name]);
         $this->receive();
         $payload=$this->sale(2,[
             'discount'=>'10.00','tax_rate'=>'15.00','cash_paid'=>'20.00','card_paid'=>'26.00','bank_paid'=>'0.00','invoice_notes'=>'Deliver with the approved purchase order.',
@@ -326,8 +395,9 @@ class SafetyShopTest extends TestCase
     }
     public function test_receipt_linked_return_restores_stock_and_prevents_over_return()
     {
+        config(['zatca.enabled'=>true]);
         $this->admin->update(['role'=>'admin','company_id'=>$this->company->id]);
-        \App\Modules\SafetyShop\Shared\Models\ReceiptSetting::create(['company_id'=>$this->company->id,'company_name'=>$this->company->name,'vat_number'=>'314482276100003']);
+        \App\Modules\SafetyShop\Shared\Models\ReceiptSetting::where('company_id',$this->company->id)->update(['company_name'=>$this->company->name,'vat_number'=>'314482276100003']);
         $this->receive();
         $this->post(route('safety-shop.sales.store'),$this->sale(2))->assertSessionHasNoErrors();
         $sale=Sale::with('lines')->firstOrFail();
@@ -344,6 +414,11 @@ class SafetyShopTest extends TestCase
         $this->assertDatabaseHas('safety_shop_movements',['reference'=>'RETURN-'.$return->id.' / SALE-'.$sale->id,'quantity'=>1]);
         $this->get(route('safety-shop.returns.show',$return))->assertOk()->assertSee($return->credit_note_number)->assertSee($sale->invoice_number)->assertSee('Counter customer')->assertSee('Unused item in original condition');
         $this->get(route('safety-shop.returns.pdf',$return))->assertOk()->assertHeader('Content-Type','application/pdf');
+        $this->post(route('safety-shop.zatca.prepare-return',$return))->assertSessionHasNoErrors();
+        $zatcaCredit=\App\Modules\Zatca\Models\ZatcaDocument::where('source_type','safety_shop_return')->firstOrFail();
+        $this->assertSame('credit_note',$zatcaCredit->document_kind);
+        $this->assertStringContainsString('CreditNote',$zatcaCredit->unsigned_xml);
+        $this->assertStringContainsString($sale->invoice_number,$zatcaCredit->unsigned_xml);
 
         $payload['request_key']=(string)Str::uuid(); $payload['lines'][0]['quantity']=2;
         $this->post(route('safety-shop.returns.store'),$payload)->assertSessionHasErrors('lines');
@@ -467,25 +542,29 @@ class SafetyShopTest extends TestCase
     public function test_invoice_draft_does_not_move_stock_and_can_be_reopened_and_finalized()
     {
         $companyAdmin=User::create(['name'=>'Draft Admin','username'=>'draft_admin','email'=>'draft_admin@test.local','password'=>Hash::make('Strong-password-123'),'role'=>'admin','company_id'=>$this->company->id,'is_active'=>true]);
-        \App\Modules\SafetyShop\Shared\Models\ReceiptSetting::create(['company_id'=>$this->company->id,'company_name'=>$this->company->name]);
+        \App\Modules\SafetyShop\Shared\Models\ReceiptSetting::where('company_id',$this->company->id)->update(['company_name'=>$this->company->name]);
         $this->login($companyAdmin)->post(route('safety-shop.stock.store'),$this->movement('receipt',10))->assertSessionHasNoErrors();
-        $draftPayload=$this->sale(2,['submit_action'=>'draft','cash_paid'=>'0.00','paid'=>'0.00']);
+        $dueDate=now()->addDays(30)->toDateString();
+        $draftPayload=$this->sale(2,['submit_action'=>'draft','cash_paid'=>'0.00','paid'=>'0.00','customer_po_number'=>'PO-DRAFT-01','due_date'=>$dueDate]);
         $this->post(route('safety-shop.sales.store'),$draftPayload)->assertSessionHasNoErrors();
         $draft=Sale::firstOrFail();
         $this->assertSame('draft',$draft->status);
+        $this->assertSame('PO-DRAFT-01',$draft->customer_po_number);
+        $this->assertSame($dueDate,$draft->due_date->toDateString());
         $this->assertSame(now()->subDay()->toDateString(),$draft->supply_date->toDateString());
         $this->assertStringStartsWith('DRAFT-',$draft->invoice_number);
         $this->assertDatabaseHas('safety_shop_stocks',['product_id'=>$this->product->id,'location_id'=>$this->location->id,'quantity'=>10]);
         $this->assertDatabaseMissing('safety_shop_movements',['reference'=>'SALE-'.$draft->id]);
-        $this->get(route('safety-shop.sales.show',$draft))->assertOk()->assertSee('receipt-draft-watermark')->assertSee('DRAFT / مسودة')->assertSee('Edit and finalize draft')->assertSee('Edit draft')->assertSee('Download draft PDF');
+        $this->get(route('safety-shop.sales.show',$draft))->assertOk()->assertSee('receipt-draft-watermark')->assertSee('DRAFT / مسودة')->assertDontSee('Payment Due Date')->assertSee('PO No.')->assertSee('PO-DRAFT-01')->assertSee('رقم أمر الشراء')->assertSee('Edit and finalize draft')->assertSee('Edit draft')->assertSee('Download draft PDF');
         $this->get(route('safety-shop.sales.pdf',$draft))->assertOk()->assertHeader('Content-Type','application/pdf');
         $this->get(route('safety-shop.sales.draft',$draft))->assertOk()->assertSee('Editing draft')->assertSee('checkout-initial-data')->assertSee('Counter customer')->assertSee('+966 55 123 4567')->assertSee('value="'.now()->subDay()->toDateString().'"',false);
-        $finalPayload=$this->sale(3,['draft_id'=>$draft->id,'submit_action'=>'final','paid'=>'100.00']);
+        $finalPayload=$this->sale(3,['draft_id'=>$draft->id,'submit_action'=>'final','paid'=>'100.00','due_date'=>$dueDate]);
         $this->post(route('safety-shop.sales.store'),$finalPayload)->assertSessionHasNoErrors();
         $this->assertDatabaseMissing('safety_shop_sales',['id'=>$draft->id]);
         $final=Sale::firstOrFail();
         $this->assertSame('finalized',$final->status);
         $this->assertSame(now()->subDay()->toDateString(),$final->supply_date->toDateString());
+        $this->assertSame($dueDate,$final->due_date->toDateString());
         $this->assertStringStartsWith('INV-',$final->invoice_number);
         $this->get(route('safety-shop.sales.show',$final))->assertOk()->assertSee(now()->subDay()->format('d-m-Y'))->assertSee('Finalized invoice — locked');
         $this->assertDatabaseHas('safety_shop_stocks',['product_id'=>$this->product->id,'location_id'=>$this->location->id,'quantity'=>7]);
@@ -499,7 +578,7 @@ class SafetyShopTest extends TestCase
     public function test_invoice_payment_ledger_moves_unpaid_to_partial_and_paid_and_supports_audited_reversal()
     {
         $companyAdmin=User::create(['name'=>'Payment Admin','username'=>'payment_admin','email'=>'payment_admin@test.local','password'=>Hash::make('Strong-password-123'),'role'=>'admin','company_id'=>$this->company->id,'is_active'=>true]);
-        \App\Modules\SafetyShop\Shared\Models\ReceiptSetting::create(['company_id'=>$this->company->id,'company_name'=>$this->company->name]);
+        \App\Modules\SafetyShop\Shared\Models\ReceiptSetting::where('company_id',$this->company->id)->update(['company_name'=>$this->company->name]);
         $this->login($companyAdmin)->post(route('safety-shop.stock.store'),$this->movement('receipt',10))->assertSessionHasNoErrors();
         $this->post(route('safety-shop.sales.store'),$this->sale(2,['paid'=>'0.00']))->assertSessionHasNoErrors();
         $sale=Sale::firstOrFail();

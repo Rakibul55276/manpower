@@ -1,5 +1,6 @@
 @extends('layouts.app')
-@section('title','New '.$n[0])
+@php($editing=isset($document))
+@section('title',($editing?'Edit ':'New ').$n[0])
 @section('eyebrow','Commercial documents')
 @section('description','Create a draft using reusable customer and item master data.')
 @section('head')
@@ -9,20 +10,25 @@
 @endsection
 @section('content')
 <div class="card"><div class="card-body">
-<form method="POST" action="{{ route($n[1].'.store') }}" id="commercial-document-form">@csrf
+<form method="POST" action="{{ $editing?route($n[1].'.update',$document):route($n[1].'.store') }}" id="commercial-document-form">@csrf @if($editing)@method('PUT')@endif
 <input type="hidden" name="document_type" value="{{ $type }}">
 <div class="form-grid">
-<div class="field"><label>Customer *</label><select name="customer_id" required><option value="">Choose approved customer</option>@foreach($customers as $c)<option value="{{ $c->id }}" {{ old('customer_id')==$c->id?'selected':'' }}>{{ $c->name }}{{ $c->arabic_name?' / '.$c->arabic_name:'' }} · VAT {{ $c->vat_number }}</option>@endforeach</select><span class="help">Customers are maintained in Safety Shop → Customers.</span></div>
-<div class="field"><label>Date *</label><input type="date" name="document_date" value="{{ old('document_date',now()->format('Y-m-d')) }}" required></div>
-@if($type==='quotation')<div class="field"><label>Valid until *</label><input type="date" name="valid_until" value="{{ old('valid_until',now()->addDays(30)->format('Y-m-d')) }}" required></div>
+<div class="field"><label>Customer *</label><select name="customer_id" required><option value="">Choose approved customer</option>@foreach($customers as $c)<option value="{{ $c->id }}" {{ old('customer_id',$editing?$document->customer_id:null)==$c->id?'selected':'' }}>{{ $c->name }}{{ $c->name_ar?' / '.$c->name_ar:'' }} · VAT {{ $c->vat_number }}</option>@endforeach</select><span class="help">Customers are maintained in Safety Shop → Customers.</span></div>
+<div class="field"><label>Date *</label><input type="date" name="document_date" value="{{ old('document_date',$editing?$document->document_date->format('Y-m-d'):now()->format('Y-m-d')) }}" required></div>
+@if($type==='quotation')<div class="field"><label>Valid until *</label><input type="date" name="valid_until" value="{{ old('valid_until',$editing?$document->valid_until->format('Y-m-d'):now()->addDays(30)->format('Y-m-d')) }}" required></div>
 @else<div class="field"><label>Related quotation</label><select name="quotation_id"><option value="">No quotation</option>@foreach($quotations as $q)<option value="{{ $q->id }}">{{ $q->number }} · {{ $q->customer->name ?? '' }}</option>@endforeach</select></div>@endif
-<div class="field"><label>Customer PO / reference</label><input name="reference" maxlength="100" value="{{ old('reference') }}"></div>
-<div class="field full"><label>Notes</label><textarea name="notes" maxlength="2000">{{ old('notes') }}</textarea></div>
+<div class="field"><label>Customer PO / reference</label><input name="reference" maxlength="100" value="{{ old('reference',$editing?$document->reference:null) }}"></div>
+@if($type==='quotation')
+<div class="field"><label for="quotation-discount-type">Discount type</label><select id="quotation-discount-type" name="discount_type"><option value="fixed" {{ old('discount_type',$editing?$document->discount_type:'fixed')==='fixed'?'selected':'' }}>Fixed amount (SAR)</option><option value="percent" {{ old('discount_type',$editing?$document->discount_type:'fixed')==='percent'?'selected':'' }}>Percentage (%)</option></select></div>
+<div class="field"><label for="quotation-discount-value">Discount value</label><input id="quotation-discount-value" name="discount_value" type="number" step="0.01" min="0" max="99999999" value="{{ old('discount_value',$editing?$document->discount_value:'0.00') }}" required></div>
+@endif
+<div class="field full"><label>Notes</label><textarea name="notes" maxlength="2000">{{ old('notes',$editing?$document->notes:null) }}</textarea></div>
 </div>
 
 <div class="card-head" style="padding-left:0;padding-right:0"><div><h2>Items</h2><span class="sub">Select a product or saved quotation item. New manual items are saved automatically for future quotations.</span></div><button class="btn secondary small" type="button" id="add-line">+ Add item</button></div>
 <div id="doc-lines" class="quote-lines"></div>
-<div class="form-footer"><a class="btn secondary" href="{{ route($n[1].'.index') }}">Cancel</a><button class="btn" type="submit">Save draft →</button></div>
+@if($type==='quotation')<div class="card" style="margin-top:16px"><div class="card-body"><div class="form-grid"><div class="field"><label>Subtotal (SAR)</label><strong id="quotation-subtotal">0.00</strong></div><div class="field"><label>Discount (SAR)</label><strong id="quotation-discount">0.00</strong></div><div class="field"><label>Taxable amount (SAR)</label><strong id="quotation-taxable">0.00</strong></div><div class="field"><label>VAT 15% (SAR)</label><strong id="quotation-vat">0.00</strong></div><div class="field"><label>Grand total (SAR)</label><strong id="quotation-total">0.00</strong></div></div></div></div>@endif
+<div class="form-footer"><a class="btn secondary" href="{{ $editing?route($n[1].'.show',$document):route($n[1].'.index') }}">Cancel</a><button class="btn" type="submit">{{ $editing?'Update draft':'Save draft →' }}</button></div>
 </form></div></div>
 
 <template id="line-template"><div class="doc-line quote-line">
@@ -31,11 +37,18 @@
 </div></template>
 <script>
 document.addEventListener('DOMContentLoaded',function(){
- const body=document.getElementById('doc-lines'),template=document.getElementById('line-template'),oldLines=@json(old('lines',[])); let next=0;
- function money(row){const q=parseFloat(row.querySelector('.quantity')?.value||0),p=parseFloat(row.querySelector('.unit-price')?.value||0),out=row.querySelector('.line-total');if(out)out.textContent=(q*p*1.15).toFixed(2);}
+ const body=document.getElementById('doc-lines'),template=document.getElementById('line-template'),oldLines=@json(old('lines',$initialLines)),discountType=document.getElementById('quotation-discount-type'),discountValue=document.getElementById('quotation-discount-value'); let next=0;
+ function totals(){if(!discountType)return;const subtotal=Array.from(body.querySelectorAll('.doc-line')).reduce((sum,row)=>sum+(parseFloat(row.querySelector('.quantity')?.value||0)*parseFloat(row.querySelector('.unit-price')?.value||0)),0),value=Math.max(0,parseFloat(discountValue.value||0)),discount=Math.min(subtotal,discountType.value==='percent'?subtotal*Math.min(value,100)/100:value),taxable=subtotal-discount,vat=taxable*.15;document.getElementById('quotation-subtotal').textContent=subtotal.toFixed(2);document.getElementById('quotation-discount').textContent=discount.toFixed(2);document.getElementById('quotation-taxable').textContent=taxable.toFixed(2);document.getElementById('quotation-vat').textContent=vat.toFixed(2);document.getElementById('quotation-total').textContent=(taxable+vat).toFixed(2);}
+ function money(row){const q=parseFloat(row.querySelector('.quantity')?.value||0),p=parseFloat(row.querySelector('.unit-price')?.value||0),out=row.querySelector('.line-total');if(out)out.textContent=(q*p*1.15).toFixed(2);totals();}
  function names(row,index){row.querySelector('.product-id').name=`lines[${index}][product_id]`;row.querySelector('.quotation-master-id').name=`lines[${index}][quotation_item_master_id]`;['description','sku','unit','quantity','unit-price'].forEach(c=>{const el=row.querySelector('.'+c);if(el)el.name=`lines[${index}][${c.replace('-','_')}]`;});}
  function add(data={}){const row=template.content.firstElementChild.cloneNode(true),index=next++;names(row,index);body.appendChild(row);row.querySelector('.description').value=data.description||'';row.querySelector('.sku').value=data.sku||'';row.querySelector('.unit').value=data.unit||'EA';row.querySelector('.quantity').value=data.quantity||1;if(row.querySelector('.unit-price'))row.querySelector('.unit-price').value=data.unit_price||'0.00';row.querySelector('.product-id').value=data.product_id||'';row.querySelector('.quotation-master-id').value=data.quotation_item_master_id||'';if(data.product_id)row.querySelector('.master-select').value='product:'+data.product_id;else if(data.quotation_item_master_id)row.querySelector('.master-select').value='quotation:'+data.quotation_item_master_id;const master=row.querySelector('.master-select'),search=row.querySelector('.master-search');search.addEventListener('input',function(){const term=this.value.trim().toLowerCase();Array.from(master.options).forEach(option=>{if(!option.value)return;option.hidden=term!==''&&!((option.textContent+' '+(option.dataset.sku||'')+' '+(option.dataset.description||'')).toLowerCase().includes(term));});const matches=Array.from(master.options).filter(option=>option.value&&!option.hidden);if(matches.length===1){master.value=matches[0].value;master.dispatchEvent(new Event('change'));}});master.addEventListener('change',function(){const option=this.selectedOptions[0],value=this.value;row.querySelector('.product-id').value=value.startsWith('product:')?value.split(':')[1]:'';row.querySelector('.quotation-master-id').value=value.startsWith('quotation:')?value.split(':')[1]:'';if(value){search.value=option.textContent.trim();Array.from(this.options).forEach(o=>o.hidden=false);row.querySelector('.description').value=option.dataset.description||'';row.querySelector('.sku').value=option.dataset.sku||'';row.querySelector('.unit').value=option.dataset.unit||'EA';if(row.querySelector('.unit-price'))row.querySelector('.unit-price').value=option.dataset.price||'0.00';money(row);}});row.querySelectorAll('.quantity,.unit-price').forEach(el=>el.addEventListener('input',()=>money(row)));row.querySelector('.remove-line').addEventListener('click',()=>{if(body.children.length>1)row.remove();else{master.value='';search.value='';row.querySelectorAll('input').forEach(i=>{if(i.type==='hidden'||i.classList.contains('description')||i.classList.contains('sku'))i.value='';});}});money(row);}
- document.getElementById('add-line').addEventListener('click',()=>add());(oldLines.length?oldLines:[{}]).forEach(add);
+ body.addEventListener('change',function(event){
+  const select=event.target.closest('.master-select');if(!select||!select.value)return;
+  const row=select.closest('.doc-line'),duplicate=Array.from(body.querySelectorAll('.doc-line')).find(other=>other!==row&&other.querySelector('.master-select').value===select.value);
+  if(!duplicate)return;
+  const existingQty=duplicate.querySelector('.quantity'),addedQty=parseFloat(row.querySelector('.quantity').value||1);existingQty.value=(parseFloat(existingQty.value||0)+addedQty).toFixed(2).replace(/\.00$/,'');money(duplicate);row.remove();existingQty.focus();
+ });
+ if(discountType){discountType.addEventListener('change',totals);discountValue.addEventListener('input',totals);}document.getElementById('add-line').addEventListener('click',()=>add());(oldLines.length?oldLines:[{}]).forEach(add);totals();
 });
 </script>
 @endsection

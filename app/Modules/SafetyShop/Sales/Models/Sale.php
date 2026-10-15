@@ -8,7 +8,7 @@ class Sale extends Model
 {
     protected $table = 'safety_shop_sales';
     protected $guarded = ['id'];
-    protected $casts = ['supply_date'=>'date','subtotal_cents'=>'integer','discount_cents'=>'integer','taxable_cents'=>'integer','tax_rate_units'=>'integer','tax_cents'=>'integer','total_cents'=>'integer','paid_cents'=>'integer','cash_cents'=>'integer','card_cents'=>'integer','bank_cents'=>'integer','payment_received'=>'boolean','cancelled_at'=>'datetime'];
+    protected $casts = ['supply_date'=>'date','due_date'=>'date','invoice_sequence_number'=>'integer','subtotal_cents'=>'integer','discount_cents'=>'integer','taxable_cents'=>'integer','tax_rate_units'=>'integer','tax_cents'=>'integer','total_cents'=>'integer','paid_cents'=>'integer','cash_cents'=>'integer','card_cents'=>'integer','bank_cents'=>'integer','payment_received'=>'boolean','cancelled_at'=>'datetime'];
     public function lines() { return $this->hasMany(SaleLine::class); }
     public function returns() { return $this->hasMany(SaleReturn::class); }
     public function payments() { return $this->hasMany(SalePayment::class); }
@@ -19,6 +19,7 @@ class Sale extends Model
     public function cancelledBy() { return $this->belongsTo(\App\Models\User::class,'cancelled_by'); }
     public function replaces() { return $this->belongsTo(self::class,'replaces_sale_id'); }
     public function replacement() { return $this->hasOne(self::class,'replaces_sale_id'); }
+    public function zatcaDocument() { return $this->hasOne(\App\Modules\Zatca\Models\ZatcaDocument::class,'source_id')->where('source_type','safety_shop_sale'); }
     public function getPaymentStatusAttribute(): string
     {
         if ($this->paid_cents <= 0) return 'unpaid';

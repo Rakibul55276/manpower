@@ -6,6 +6,7 @@ use App\Modules\SafetyShop\Stock\Models\Stock;
 use App\Modules\SafetyShop\Sales\Models\Sale;
 use App\Modules\SafetyShop\Sales\Models\Customer;
 use App\Modules\SafetyShop\Shared\Models\Master;
+use App\Modules\SafetyShop\Shared\Models\ReceiptSetting;
 use App\Modules\SafetyShop\Stock\Services\InventoryService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -25,9 +26,12 @@ class SaleService
             $subtotal=0;$lines=[];foreach($products as $product){$quantity=(int)$items[$product->id]['quantity'];$price=(int)($quotedPrices[$product->id]??$product->price_cents);if((int)$items[$product->id]['price_cents']!==$price)$this->fail('lines','A quoted product price changed. Reload the quotation.');$lineTotal=$quantity*$price;$subtotal+=$lineTotal;$lines[]=['product_id'=>$product->id,'sku'=>$product->sku,'barcode'=>$product->barcode,'name'=>$product->name,'unit'=>$product->unit,'quantity'=>$quantity,'cost_cents'=>$product->cost_cents,'price_cents'=>$price,'total_cents'=>$lineTotal];}
             $discount=$this->cents($data['discount']??'0');if($discount>$subtotal)$this->fail('discount','Discount cannot exceed subtotal.');$taxable=$subtotal-$discount;$taxRateUnits=(int)round(((float)($data['tax_rate']??0))*100);$tax=(int)round($taxable*$taxRateUnits/10000);$total=$taxable+$tax;
             $cash=$this->cents($data['cash_paid']??'0');$card=$this->cents($data['card_paid']??'0');$bank=$this->cents($data['bank_paid']??'0');$paid=$cash+$card+$bank;$methods=collect(['cash'=>$cash,'card'=>$card,'bank'=>$bank])->filter()->keys();$method=$methods->count()>1?'split':($methods->first()?:'credit');
-            $values=['request_key'=>$draft?$draft->request_key:$data['request_key'],'invoice_number'=>$draft?$draft->invoice_number:'DRAFT-'.Str::upper(Str::random(8)),'location_id'=>$data['location_id'],'customer_id'=>$data['customer_id']??null,'customer_type'=>$data['customer_type']??'retail','customer'=>trim($data['customer']??'')?:'Walk-in customer','customer_name_ar'=>$data['customer_name_ar']??null,'customer_contact_person'=>$data['customer_contact_person']??null,'customer_phone'=>$data['customer_phone']??null,'customer_email'=>$data['customer_email']??null,'customer_vat_number'=>$data['customer_vat_number']??null,'customer_commercial_registration'=>$data['customer_commercial_registration']??null,'customer_address'=>$data['customer_address']??null,'invoice_notes'=>$data['invoice_notes']??null,'subtotal_cents'=>$subtotal,'discount_cents'=>$discount,'taxable_cents'=>$taxable,'tax_rate_units'=>$taxRateUnits,'tax_cents'=>$tax,'total_cents'=>$total,'paid_cents'=>$paid,'cash_cents'=>$cash,'card_cents'=>$card,'bank_cents'=>$bank,'payment_method'=>$method,'payment_received'=>(bool)($data['payment_received']??false)&&$paid>0,'status'=>'draft','created_by'=>$userId];
+            $values=['request_key'=>$draft?$draft->request_key:$data['request_key'],'invoice_number'=>$draft?$draft->invoice_number:'DRAFT-'.Str::upper(Str::random(8)),'location_id'=>$data['location_id'],'customer_id'=>$data['customer_id']??null,'customer_type'=>$data['customer_type']??'retail','customer'=>trim($data['customer']??'')?:'Retail Customer','customer_name_ar'=>$data['customer_name_ar']??null,'customer_contact_person'=>$data['customer_contact_person']??null,'customer_phone'=>$data['customer_phone']??null,'customer_email'=>$data['customer_email']??null,'customer_vat_number'=>$data['customer_vat_number']??null,'customer_commercial_registration'=>$data['customer_commercial_registration']??null,'customer_address'=>$data['customer_address']??null,'invoice_notes'=>$data['invoice_notes']??null,'subtotal_cents'=>$subtotal,'discount_cents'=>$discount,'taxable_cents'=>$taxable,'tax_rate_units'=>$taxRateUnits,'tax_cents'=>$tax,'total_cents'=>$total,'paid_cents'=>$paid,'cash_cents'=>$cash,'card_cents'=>$card,'bank_cents'=>$bank,'payment_method'=>$method,'payment_received'=>(bool)($data['payment_received']??false)&&$paid>0,'status'=>'draft','created_by'=>$userId];
             $values['quotation_id']=$data['quotation_id']??null;
+            $values['customer_po_number']=$data['customer_po_number']??null;
+            $values['invoice_type']=($data['customer_type']??'retail')==='company'?'standard':'simplified';
             $values['supply_date']=$data['supply_date'];
+            $values['due_date']=$data['due_date']??null;
             if($draft){$draft->update($values);$draft->lines()->delete();}else{$draft=Sale::create($values);}foreach($lines as $line)$draft->lines()->create($line);ActivityLog::record('Saved safety shop invoice draft',$draft->invoice_number);return $draft;
         },3);
     }
@@ -39,6 +43,7 @@ class SaleService
             $companyId=(int)$location->company_id;
             $actor=User::findOrFail($userId);
             if(!$actor->canOperateSafetyShop() || (int)$actor->company_id!==$companyId) $this->fail('location_id','Select a location belonging to your company.');
+            $this->assertPhaseOneSeller($companyId);
             $products = Product::where('company_id',$companyId)->whereIn('id',$items->keys())->orderBy('id')->lockForUpdate()->get();
             if (Sale::where('request_key',$data['request_key'])->exists()) throw ValidationException::withMessages(['request_key'=>'This sale was already posted. Start a new checkout.']);
             if ($products->count() !== $items->count()) throw ValidationException::withMessages(['lines'=>'A product no longer exists.']);
@@ -51,6 +56,9 @@ class SaleService
                 $quantity=(int)$items[$product->id]['quantity']; $lineTotal=$quantity*$price; $subtotal+=$lineTotal;
                 $lines[]=['product_id'=>$product->id,'sku'=>$product->sku,'barcode'=>$product->barcode,'name'=>$product->name,'unit'=>$product->unit,'quantity'=>$quantity,'cost_cents'=>$product->cost_cents,'price_cents'=>$price,'total_cents'=>$lineTotal];
             }
+            $stocks=Stock::where('location_id',$data['location_id'])->whereIn('product_id',$items->keys())->orderBy('product_id')->lockForUpdate()->get()->keyBy('product_id');
+            $shortages=collect($lines)->filter(fn($line)=>(int)optional($stocks->get($line['product_id']))->quantity<$line['quantity'])->map(function($line)use($stocks){$available=(int)optional($stocks->get($line['product_id']))->quantity;return $line['name'].' (required '.$line['quantity'].', available '.$available.')';});
+            if($shortages->isNotEmpty())$this->fail('lines','Invoice cannot be posted because stock is unavailable at this location: '.$shortages->implode('; '));
             if ($subtotal > 9999999999) throw ValidationException::withMessages(['lines'=>'Sale total exceeds SAR 99,999,999.99.']);
             $discount=$this->cents($data['discount']??'0');
             if ($discount > $subtotal) throw ValidationException::withMessages(['discount'=>'Discount cannot exceed the subtotal.']);
@@ -70,8 +78,8 @@ class SaleService
                 $cash=$method==='cash'?$paid:0; $card=$method==='card'?$paid:0; $bank=$method==='bank'?$paid:0;
                 if ($method !== 'cash' && $paid > $total) throw ValidationException::withMessages(['paid'=>'Card and bank payments cannot exceed the sale total.']);
             }
-            $customerName=trim($data['customer']??'')?:'Walk-in customer'; $phoneDisplay=!empty($data['customer_phone'])?trim($data['customer_phone']):null; $phone=$phoneDisplay?preg_replace('/[^0-9+]/','',$phoneDisplay):null; $customerRecord=null;
-            if ($customerName!=='Walk-in customer' || $phone || !empty($data['customer_email']) || !empty($data['customer_address'])) {
+            $customerName=trim($data['customer']??'')?:'Retail Customer'; $phoneDisplay=!empty($data['customer_phone'])?trim($data['customer_phone']):null; $phone=$phoneDisplay?preg_replace('/[^0-9+]/','',$phoneDisplay):null; $customerRecord=null;
+            if ($customerName!=='Retail Customer' || $phone || !empty($data['customer_email']) || !empty($data['customer_address'])) {
                 $customerRecord=!empty($data['customer_id'])?Customer::where('company_id',$companyId)->whereKey($data['customer_id'])->lockForUpdate()->firstOrFail():null;
                 if($phone&&Customer::where('company_id',$companyId)->where('phone',$phone)->when($customerRecord,fn($query)=>$query->where('id','<>',$customerRecord->id))->exists())$this->fail('customer_phone','This mobile number belongs to another saved customer. Select that customer instead.');
                 if(!$customerRecord&&$phone)$customerRecord=Customer::where('company_id',$companyId)->where('phone',$phone)->lockForUpdate()->first();
@@ -87,11 +95,11 @@ class SaleService
                 $data['customer_postal_code']??null,
                 $data['customer_country_code']??null,
             ])->filter()->unique()->implode(', ');
-            do {$invoiceNumber='INV-'.Str::upper(Str::random(8));} while(Sale::where('invoice_number',$invoiceNumber)->exists());
+            [$invoiceNumber,$sequenceNumber]=$this->nextInvoiceNumber($companyId);
             $replaces=null;
             if(!empty($data['replaces_sale_id'])){$replaces=Sale::whereKey($data['replaces_sale_id'])->lockForUpdate()->firstOrFail();if(!$actor->canApprove()||(int)$replaces->location()->value('company_id')!==$companyId||$replaces->status!=='void'||$replaces->replacement()->exists())$this->fail('replaces_sale_id','This invoice cannot be replaced.');}
             $sale=Sale::create(['invoice_number'=>$invoiceNumber,'request_key'=>$data['request_key'],'location_id'=>$data['location_id'],'customer_id'=>optional($customerRecord)->id,'customer_type'=>$data['customer_type']??'retail','customer'=>$customerName,'customer_name_ar'=>$data['customer_name_ar']??null,'customer_contact_person'=>$data['customer_contact_person']??null,'customer_phone'=>$phoneDisplay,'customer_email'=>$data['customer_email']??null,'customer_vat_number'=>$data['customer_vat_number']??null,'customer_commercial_registration'=>$data['customer_commercial_registration']??null,'customer_address'=>$customerAddress?:null,'invoice_notes'=>$data['invoice_notes']??null,'subtotal_cents'=>$subtotal,'discount_cents'=>$discount,'taxable_cents'=>$taxable,'tax_rate_units'=>$taxRateUnits,'tax_cents'=>$tax,'total_cents'=>$total,'paid_cents'=>$paid,'cash_cents'=>$cash,'card_cents'=>$card,'bank_cents'=>$bank,'payment_method'=>$method,'payment_received'=>(bool)($data['payment_received']??false)&&$paid>0,'status'=>'finalized','replaces_sale_id'=>optional($replaces)->id,'created_by'=>$userId]);
-            $sale->update(['supply_date'=>$data['supply_date'],'quotation_id'=>$data['quotation_id']??null]);
+            $sale->update(['invoice_type'=>($data['customer_type']??'retail')==='company'?'standard':'simplified','invoice_sequence_number'=>$sequenceNumber,'supply_date'=>$data['supply_date'],'due_date'=>$data['due_date']??null,'quotation_id'=>$data['quotation_id']??null,'customer_po_number'=>$data['customer_po_number']??null]);
             foreach(['cash'=>$cash,'card'=>$card,'bank'=>$bank] as $paymentMethod=>$amount){if($amount>0)$sale->payments()->create(['payment_date'=>now()->toDateString(),'method'=>$paymentMethod,'amount_cents'=>$amount,'reference'=>'Initial invoice payment','source'=>'initial','created_by'=>$userId]);}
             if($customerRecord)$customerRecord->update(['purchase_count'=>$customerRecord->purchase_count+1,'lifetime_value_cents'=>$customerRecord->lifetime_value_cents+$total,'last_purchase_at'=>now()]);
             foreach ($lines as $line) {
@@ -127,8 +135,23 @@ class SaleService
     private function quotedPrices($quotationId,int $companyId)
     {
         if(!$quotationId)return collect();
-        $quotation=CommercialDocument::whereKey($quotationId)->where('company_id',$companyId)->where('type','quotation')->where('status','approved')->with('lines')->firstOrFail();
+        $quotation=CommercialDocument::whereKey($quotationId)->where('company_id',$companyId)->where('type','quotation')->where('status','approved')->whereNull('superseded_by_id')->with('lines')->firstOrFail();
         return $quotation->lines->whereNotNull('product_id')->pluck('unit_price_cents','product_id');
+    }
+    private function assertPhaseOneSeller(int $companyId): void
+    {
+        $settings=ReceiptSetting::forCompany($companyId)->first();
+        if(!$settings||!filled($settings->company_name)||!filled($settings->company_name_ar)||!preg_match('/^\d{15}$/',(string)$settings->vat_number)||!filled($settings->address)||!filled($settings->city)){
+            $this->fail('location_id','Complete the company English/Arabic legal name, 15-digit VAT number, address, and city in Document Branding before finalizing a ZATCA invoice.');
+        }
+    }
+    private function nextInvoiceNumber(int $companyId): array
+    {
+        DB::table('safety_shop_invoice_sequences')->insertOrIgnore(['company_id'=>$companyId,'last_number'=>0,'created_at'=>now(),'updated_at'=>now()]);
+        $sequence=DB::table('safety_shop_invoice_sequences')->where('company_id',$companyId)->lockForUpdate()->first();
+        $number=(int)$sequence->last_number+1;
+        DB::table('safety_shop_invoice_sequences')->where('company_id',$companyId)->update(['last_number'=>$number,'updated_at'=>now()]);
+        return ['INV-'.str_pad((string)$companyId,4,'0',STR_PAD_LEFT).'-'.str_pad((string)$number,8,'0',STR_PAD_LEFT),$number];
     }
     private function fail($field,$message){throw ValidationException::withMessages([$field=>$message]);}
 }
