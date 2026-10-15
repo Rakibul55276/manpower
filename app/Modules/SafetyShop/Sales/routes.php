@@ -2,6 +2,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Modules\SafetyShop\Sales\Http\Controllers\SaleController;
 use App\Modules\SafetyShop\Sales\Http\Controllers\ReturnController;
+use App\Modules\SafetyShop\Sales\Http\Controllers\DebitNoteController;
 Route::prefix('sales')->name('sales.')->group(function () {
     Route::get('/',[SaleController::class,'index'])->name('index');
     Route::get('/checkout',[SaleController::class,'create'])->middleware('shop_operator')->name('create');
@@ -22,4 +23,12 @@ Route::prefix('returns')->name('returns.')->group(function () {
     Route::post('/',[ReturnController::class,'store'])->middleware('shop_operator')->name('store');
     Route::get('/{return}/pdf',[ReturnController::class,'pdf'])->whereNumber('return')->name('pdf');
     Route::get('/{return}',[ReturnController::class,'show'])->whereNumber('return')->name('show');
+});
+Route::prefix('debit-notes')->name('debit-notes.')->group(function () {
+    Route::get('/',[DebitNoteController::class,'index'])->name('index');
+    Route::get('/new',[DebitNoteController::class,'create'])->middleware('approver')->name('create');
+    Route::get('/lookup',[DebitNoteController::class,'lookup'])->middleware('approver')->name('lookup');
+    Route::post('/',[DebitNoteController::class,'store'])->middleware('approver')->name('store');
+    Route::get('/{debitNote}/pdf',[DebitNoteController::class,'pdf'])->whereNumber('debitNote')->name('pdf');
+    Route::get('/{debitNote}',[DebitNoteController::class,'show'])->whereNumber('debitNote')->name('show');
 });

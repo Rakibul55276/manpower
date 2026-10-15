@@ -44,7 +44,7 @@ class AuthController extends Controller
     }
     public function logout(Request $request)
     {
-        $module=$request->route('module') ?: $request->session()->get('active_module','manpower');
+        $module=$request->routeIs('safety-shop.logout')?'safety-shop':($request->routeIs('manpower.logout')?'manpower':($request->route('module') ?: $request->session()->get('active_module','manpower')));
         Auth::logout(); $request->session()->invalidate(); $request->session()->regenerateToken();
         return redirect()->route($module==='safety-shop'?'safety-shop.login':'manpower.login');
     }

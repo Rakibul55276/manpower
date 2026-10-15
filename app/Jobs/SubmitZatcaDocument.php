@@ -19,7 +19,14 @@ class SubmitZatcaDocument implements ShouldQueue
     {
         $document=ZatcaDocument::with('device')->findOrFail($this->documentId);if(in_array($document->status,['reported','cleared'],true))return;
         if(!$document->signed_xml)throw new \RuntimeException('Officially signed XML is required before submission.');
-        $document->increment('attempt_count');$response=$client->submit($document->device,$document);$cleared=$response['clearedInvoice']??null;
+        $payload=$client->submissionPayload($document);$document->update(['request_payload'=>$payload,'submitted_at'=>now()]);$document->increment('attempt_count');
+        try{$response=$client->submit($document->device,$document);}catch(Throwable $exception){$response=$exception instanceof \Illuminate\Http\Client\RequestException?$exception->response?->json():null;$document->update(['response_payload'=>$response,'status'=>'failed','last_error'=>mb_substr($exception->getMessage(),0,2000),'next_retry_at'=>now()->addMinutes(15)]);throw $exception;}$cleared=$response['clearedInvoice']??null;
+        $status=strtoupper((string)($document->submission_mode==='clearance'?($response['clearanceStatus']??''):($response['reportingStatus']??'')));
+        $expected=$document->submission_mode==='clearance'?'CLEARED':'REPORTED';
+        if($status!==$expected||!empty($response['validationResults']['errorMessages']??[])){
+            $document->update(['response_payload'=>$response,'status'=>'failed','last_error'=>'ZATCA did not accept the document. Status: '.($status?:'missing').'.','next_retry_at'=>now()->addMinutes(15)]);
+            throw new \RuntimeException('ZATCA did not accept the document. Status: '.($status?:'missing').'.');
+        }
         $document->update(['status'=>$document->submission_mode==='clearance'?'cleared':'reported','response_payload'=>$response,'cleared_xml'=>$cleared?base64_decode($cleared):null,'submitted_at'=>now(),'accepted_at'=>now(),'next_retry_at'=>null,'last_error'=>null]);
     }
     public function failed(Throwable $e): void{if($d=ZatcaDocument::find($this->documentId))$d->update(['status'=>'failed','last_error'=>mb_substr($e->getMessage(),0,2000),'next_retry_at'=>now()->addHour()]);}

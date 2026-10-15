@@ -9,6 +9,9 @@ use App\Modules\SafetyShop\Sales\Services\ReturnService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use App\Services\Documents;
+use App\Modules\Zatca\Services\ZatcaIssuanceGate;
+use App\Modules\Zatca\Services\ZatcaQrService;
+use App\Modules\Zatca\Services\ZatcaLifecycleService;
 
 class ReturnController extends Controller
 {
@@ -40,7 +43,7 @@ class ReturnController extends Controller
         ]);
     }
 
-    public function store(Request $request, ReturnService $service)
+    public function store(Request $request, ReturnService $service,ZatcaLifecycleService $zatca)
     {
         $data=$request->validate([
             'request_key'=>'required|uuid', 'sale_id'=>'required|integer|exists:safety_shop_sales,id',
@@ -50,7 +53,8 @@ class ReturnController extends Controller
         ]);
         abort_unless(Sale::whereKey($data['sale_id'])->where('status','finalized')->whereHas('location',fn($q)=>$q->where('company_id',$request->user()->company_id))->exists(),404);
         $return=$service->post($data,$request->user()->id);
-        return redirect()->route('safety-shop.returns.show',$return)->with('success','Customer return posted and stock restored.');
+        $zatcaProcessed=$zatca->processReturn($return);
+        return redirect()->route('safety-shop.returns.show',$return)->with('success','Customer return posted and stock restored.'.($zatcaProcessed?' ZATCA accepted the credit note.':''));
     }
 
     public function show(Request $request,SaleReturn $return)
@@ -60,18 +64,19 @@ class ReturnController extends Controller
         return view('safety-shop.returns.show',compact('return'));
     }
 
-    public function pdf(Request $request, SaleReturn $return)
+    public function pdf(Request $request, SaleReturn $return,ZatcaIssuanceGate $gate,ZatcaQrService $qrService)
     {
         abort_unless((int)$return->location()->value('company_id')===(int)$request->user()->company_id,404);
-        $return->load(['sale.customerRecord','sale.location','location','creator','lines.saleLine']);
+        $return->load(['sale.customerRecord','sale.location','location','creator','lines.saleLine','zatcaDocument']);
+        $gate->assertPrintable((int)$request->user()->company_id,$return->sale->invoice_type,$return->zatcaDocument);
         $receiptSettings=Documents::branding();
         abort_unless($receiptSettings,404);
-        $qr=$this->creditNoteQr($return,$receiptSettings);
+        $qr=$qrService->dataUri($return->zatcaDocument,$this->creditNoteQrPayload($return,$receiptSettings));
         $bytes=Documents::render('pdf.safety-shop-credit-note',compact('return','receiptSettings','qr'),'A4','portrait',false,false,true);
         return Documents::download($bytes,$return->credit_note_number.'.pdf');
     }
 
-    private function creditNoteQr(SaleReturn $return, $settings): string
+    private function creditNoteQrPayload(SaleReturn $return, $settings): string
     {
         $fields=[
             1=>(string)($settings->company_name ?: 'Harbour Edge Company Limited'),
@@ -82,6 +87,6 @@ class ReturnController extends Controller
         ];
         $tlv='';
         foreach($fields as $tag=>$value){$bytes=mb_strcut((string)$value,0,255,'UTF-8');$tlv.=chr($tag).chr(strlen($bytes)).$bytes;}
-        return Documents::qrDataUri(base64_encode($tlv));
+        return base64_encode($tlv);
     }
 }

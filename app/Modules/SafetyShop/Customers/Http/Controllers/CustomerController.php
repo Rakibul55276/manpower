@@ -45,7 +45,7 @@ class CustomerController extends Controller
             'customer_type'=>'required|in:retail,company','name'=>'required|string|max:150','name_ar'=>'nullable|required_if:customer_type,company|string|max:150','contact_person'=>'nullable|required_if:customer_type,company|string|max:150',
             'phone'=>['nullable','string','max:30',Rule::unique('safety_shop_customers','phone')->where(fn($q)=>$q->where('company_id',$request->user()->company_id))->ignore(optional($customer)->id)],'email'=>'nullable|email|max:150',
             'vat_number'=>'nullable|required_if:customer_type,company|digits:15','commercial_registration'=>'nullable|string|max:30',
-            'address'=>'nullable|string|max:500','building_number'=>'nullable|string|max:20','street'=>'nullable|string|max:150','district'=>'nullable|string|max:100','city'=>'nullable|string|max:100','postal_code'=>'nullable|string|max:10','country_code'=>'required|string|size:2',
+            'address'=>'nullable|string|max:500','building_number'=>'nullable|digits:4','additional_number'=>'nullable|digits:4','street'=>'nullable|string|max:150','district'=>'nullable|string|max:100','city'=>'nullable|string|max:100','postal_code'=>'nullable|digits:5','country_code'=>'required|string|size:2',
             'bank_account_name'=>'nullable|string|max:150','bank_name'=>'nullable|string|max:150','bank_account_number'=>'nullable|string|max:50','bank_iban'=>'nullable|string|max:34','bank_branch'=>'nullable|string|max:100','is_active'=>'required|boolean'
         ]);
     }
