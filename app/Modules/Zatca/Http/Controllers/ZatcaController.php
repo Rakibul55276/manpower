@@ -12,6 +12,7 @@ use App\Modules\Zatca\Models\ZatcaDocument;
 use App\Modules\Zatca\Services\ZatcaInvoiceService;
 use App\Modules\Zatca\Services\FatooraClient;
 use App\Modules\Zatca\Services\ZatcaOnboardingService;
+use App\Modules\Zatca\Services\ZatcaSdkService;
 use App\Models\ActivityLog;
 use Illuminate\Http\Request;
 
@@ -63,8 +64,8 @@ class ZatcaController extends Controller
     public function configure(Request $request)
     {
         $data=$request->validate(['environment'=>'required|in:disabled,simulation,production','solution_unit_name'=>'required|string|max:150']);
-        if($data['environment']==='production')abort_unless($request->boolean('confirm_production'),422,'Production activation requires explicit confirmation.');
-        $device=ZatcaDevice::firstOrCreate(['company_id'=>$request->user()->company_id]);$device->update($data);ActivityLog::record('Updated ZATCA EGS configuration',$data['environment']);return back()->with('success','EGS configuration updated.');
+        if($data['environment']==='production'&&!$request->boolean('confirm_production'))return redirect()->route('safety-shop.zatca.index')->with('error','Tick “I explicitly authorize production mode” before activating the production environment.');
+        $device=ZatcaDevice::firstOrCreate(['company_id'=>$request->user()->company_id]);$device->update($data);ActivityLog::record('Updated ZATCA EGS configuration',$data['environment']);return redirect()->route('safety-shop.zatca.index')->with('success','EGS configuration updated.');
     }
 
     public function generateCsr(Request $request,ZatcaOnboardingService $service)
@@ -74,7 +75,41 @@ class ZatcaController extends Controller
 
     public function complianceCsid(Request $request,FatooraClient $client,ZatcaOnboardingService $onboarding)
     {
-        $data=$request->validate(['otp'=>'required|digits:6']);$device=ZatcaDevice::where('company_id',$request->user()->company_id)->firstOrFail();$onboarding->installCompliance($device,$client->complianceCsid($device,$data['otp']));ActivityLog::record('Installed ZATCA Compliance CSID',$device->solution_unit_name);return back()->with('success','Compliance CSID installed. Run all compliance document checks next.');
+        $device=ZatcaDevice::where('company_id',$request->user()->company_id)->firstOrFail();
+        $data=$request->validate(['otp'=>[$device->environment==='production'?'required':'nullable','digits:6']]);
+        try {
+            $onboarding->installCompliance($device,$client->complianceCsid($device,$data['otp']??null));
+            ActivityLog::record('Installed ZATCA Compliance CSID',$device->solution_unit_name);
+            return redirect()->route('safety-shop.zatca.index')->with('success','Compliance CSID installed. Run all compliance document checks next.');
+        } catch (\Illuminate\Http\Client\RequestException $exception) {
+            $status=$exception->response?->status();
+            $message=data_get($exception->response?->json(),'message')?:data_get($exception->response?->json(),'errors.0.message');
+            report($exception);
+            return redirect()->route('safety-shop.zatca.index')->with('error','ZATCA rejected the Compliance CSID request'.($status?' (HTTP '.$status.')':'.').($message?' '.$message:''));
+        } catch (\Illuminate\Http\Client\ConnectionException $exception) {
+            report($exception);
+            return redirect()->route('safety-shop.zatca.index')->with('error','The ZATCA sandbox could not be reached. Check the server internet, firewall and sandbox URL, then try again.');
+        }
+    }
+
+    public function signValidate(Request $request,ZatcaDocument $document,ZatcaSdkService $sdk)
+    {
+        abort_unless((int)$document->company_id===(int)$request->user()->company_id,404);$document->load('device');
+        abort_unless(filled($document->device?->compliance_certificate)||filled($document->device?->production_certificate),422,'Install a Compliance or Production CSID first.');
+        $signed=$sdk->sign($document);abort_unless($signed['status']==='passed'&&filled($signed['xml']),422,'Official SDK signing failed: '.trim(($signed['error']??'').' '.($signed['output']??'')));
+        $document->signed_xml=$signed['xml'];$validation=$sdk->validate($document);$results=$document->validation_results?:[];$results['zatca_sdk']=$validation;
+        $changes=['signed_xml'=>$signed['xml'],'validation_results'=>$results,'last_error'=>$validation['status']==='passed'?null:trim(($validation['error']??'').' '.($validation['output']??''))];
+        if(filled($signed['invoice_hash_hex']??null))$changes['invoice_hash']=$signed['invoice_hash_hex'];
+        $document->update($changes);ActivityLog::record('Signed and SDK-validated ZATCA document',$document->uuid);
+        return back()->with($validation['status']==='passed'?'success':'error',$validation['status']==='passed'?'Official ZATCA SDK validation passed.':'SDK validation failed. Review the document errors.');
+    }
+
+    public function complianceCheck(Request $request,ZatcaDocument $document,FatooraClient $client)
+    {
+        abort_unless((int)$document->company_id===(int)$request->user()->company_id,404);$document->load('device');abort_unless(filled($document->signed_xml),422,'Sign and validate this document first.');abort_unless(data_get($document->validation_results,'zatca_sdk.status')==='passed',422,'Official SDK validation must pass first.');
+        $response=$client->complianceCheck($document->device,$document);$passed=in_array($response['reportingStatus']??$response['clearanceStatus']??null,['REPORTED','CLEARED','PASS','PASSED'],true)||empty($response['validationResults']['errorMessages']??[]);
+        $document->update(['status'=>$passed?'compliance_passed':'failed','response_payload'=>$response,'last_error'=>$passed?null:json_encode($response['validationResults']['errorMessages']??$response)]);ActivityLog::record('Ran ZATCA compliance check',$document->uuid);
+        return back()->with($passed?'success':'error',$passed?'ZATCA compliance check passed.':'ZATCA compliance check failed. Review the response.');
     }
 
     public function productionCsid(Request $request,FatooraClient $client,ZatcaOnboardingService $onboarding)

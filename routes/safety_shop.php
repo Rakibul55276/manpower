@@ -15,10 +15,14 @@ Route::middleware(['auth','active','auth.session','saas.subscription','operation
             Route::post('/returns/{return}/prepare',[\App\Modules\Zatca\Http\Controllers\ZatcaController::class,'prepareReturn'])->whereNumber('return')->name('prepare-return');
             Route::get('/documents/{document}/xml',[\App\Modules\Zatca\Http\Controllers\ZatcaController::class,'xml'])->whereNumber('document')->name('xml');
             Route::get('/audit.csv',[\App\Modules\Zatca\Http\Controllers\ZatcaController::class,'csv'])->name('csv');
-            Route::put('/device',[\App\Modules\Zatca\Http\Controllers\ZatcaController::class,'configure'])->name('configure');
-            Route::post('/device/csr',[\App\Modules\Zatca\Http\Controllers\ZatcaController::class,'generateCsr'])->name('csr');
-            Route::post('/device/compliance-csid',[\App\Modules\Zatca\Http\Controllers\ZatcaController::class,'complianceCsid'])->name('compliance-csid');
-            Route::post('/device/production-csid',[\App\Modules\Zatca\Http\Controllers\ZatcaController::class,'productionCsid'])->name('production-csid');
+            Route::middleware('company_admin')->group(function(){
+                Route::put('/device',[\App\Modules\Zatca\Http\Controllers\ZatcaController::class,'configure'])->name('configure');
+                Route::post('/device/csr',[\App\Modules\Zatca\Http\Controllers\ZatcaController::class,'generateCsr'])->name('csr');
+                Route::post('/device/compliance-csid',[\App\Modules\Zatca\Http\Controllers\ZatcaController::class,'complianceCsid'])->middleware('throttle:5,1')->name('compliance-csid');
+                Route::post('/device/production-csid',[\App\Modules\Zatca\Http\Controllers\ZatcaController::class,'productionCsid'])->middleware('throttle:5,1')->name('production-csid');
+                Route::post('/documents/{document}/sign-validate',[\App\Modules\Zatca\Http\Controllers\ZatcaController::class,'signValidate'])->whereNumber('document')->name('sign-validate');
+                Route::post('/documents/{document}/compliance-check',[\App\Modules\Zatca\Http\Controllers\ZatcaController::class,'complianceCheck'])->middleware('throttle:10,1')->whereNumber('document')->name('compliance-check');
+            });
         });
     });
 });

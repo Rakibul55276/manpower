@@ -271,6 +271,9 @@ class SafetyShopTest extends TestCase
 
         $sdk=app(\App\Modules\Zatca\Services\ZatcaSdkService::class);
         if($sdk->available()){
+            $signed=$sdk->sign($document);
+            $this->assertSame('passed',$signed['status'],trim(($signed['output']??'')."\n".($signed['error']??'')));
+            $document->signed_xml=$signed['xml'];
             $sdkResult=$sdk->validate($document);
             $this->assertSame('passed',$sdkResult['status'],trim(($sdkResult['output']??'')."\n".($sdkResult['error']??'')));
         }
@@ -417,8 +420,14 @@ class SafetyShopTest extends TestCase
         $this->post(route('safety-shop.zatca.prepare-return',$return))->assertSessionHasNoErrors();
         $zatcaCredit=\App\Modules\Zatca\Models\ZatcaDocument::where('source_type','safety_shop_return')->firstOrFail();
         $this->assertSame('credit_note',$zatcaCredit->document_kind);
-        $this->assertStringContainsString('CreditNote',$zatcaCredit->unsigned_xml);
+        $this->assertStringContainsString('<cbc:InvoiceTypeCode name="0200000">381</cbc:InvoiceTypeCode>',$zatcaCredit->unsigned_xml);
         $this->assertStringContainsString($sale->invoice_number,$zatcaCredit->unsigned_xml);
+        $sdk=app(\App\Modules\Zatca\Services\ZatcaSdkService::class);
+        if($sdk->available()){
+            $signed=$sdk->sign($zatcaCredit);$this->assertSame('passed',$signed['status'],trim(($signed['output']??'')."\n".($signed['error']??'')));
+            $zatcaCredit->signed_xml=$signed['xml'];$validated=$sdk->validate($zatcaCredit);
+            $this->assertSame('passed',$validated['status'],trim(($validated['output']??'')."\n".($validated['error']??'')));
+        }
 
         $payload['request_key']=(string)Str::uuid(); $payload['lines'][0]['quantity']=2;
         $this->post(route('safety-shop.returns.store'),$payload)->assertSessionHasErrors('lines');
