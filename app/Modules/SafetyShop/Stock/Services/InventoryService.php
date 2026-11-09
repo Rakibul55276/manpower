@@ -26,7 +26,8 @@ class InventoryService
             $stock = Stock::firstOrCreate(['product_id'=>$product->id, 'location_id'=>$data['location_id']], ['quantity'=>0]);
             $stock = Stock::whereKey($stock->id)->lockForUpdate()->firstOrFail();
             $quantity = (int)$data['quantity'];
-            if ($data['type'] !== 'adjustment' && $quantity <= 0) $this->fail('quantity', 'Enter a positive whole quantity.');
+            if ($data['type'] === 'receipt' && $quantity < 0) $this->fail('quantity', 'Enter zero or a positive whole quantity.');
+            if ($data['type'] !== 'receipt' && $data['type'] !== 'adjustment' && $quantity <= 0) $this->fail('quantity', 'Enter a positive whole quantity.');
             if ($data['type'] === 'adjustment' && $quantity === 0) $this->fail('quantity', 'An adjustment must change stock.');
             $delta = in_array($data['type'], ['issue', 'transfer'], true) ? -$quantity : $quantity;
             $balance = $stock->quantity + $delta;

@@ -12,12 +12,18 @@
     const destination = document.getElementById('destination_id');
     const location = document.getElementById('location_id');
     const supportingDocumentLabel = document.getElementById('supporting-document-label');
+    const quantity = document.getElementById('quantity');
+    const quantityHelp = document.getElementById('quantity-help');
     const syncMovementFields = () => {
         const transfer = movementType?.value === 'transfer';
         locationLabel.textContent = transfer ? 'Transfer source *' : 'Stock location *';
         destinationField.hidden = !transfer;
         destination.required = transfer;
         supportingDocumentLabel.firstChild.textContent = transfer ? 'Transfer document ' : 'Supporting receipt ';
+        if (quantity) quantity.min = transfer ? '1' : '0';
+        if (quantityHelp) quantityHelp.textContent = transfer
+            ? 'Transfer quantity must be a positive whole number; zero is not allowed.'
+            : 'Enter 0 to assign the product to this location as out of stock, or enter a positive quantity to receive stock.';
         if (!transfer) destination.value = '';
         updateStockBalance();
     };
@@ -34,14 +40,27 @@
     }));
     const selectedMatch = () => options.find(item => item.option.value === product.value);
     const stockAt = (match, locationId) => Number(match?.stocks?.[locationId] || 0);
+    function validateTransfer() {
+        const transfer = movementType?.value === 'transfer';
+        const match = selectedMatch();
+        const available = stockAt(match, location?.value);
+        if (quantity) {
+            quantity.max = transfer ? String(Math.min(available, 1000000)) : '1000000';
+            const entered = Number(quantity.value);
+            quantity.setCustomValidity(transfer && entered > available ? `Only ${available} units are available at the transfer source.` : '');
+        }
+        if (destination) destination.setCustomValidity(transfer && location?.value && destination.value === location.value ? 'Choose a destination different from the transfer source.' : '');
+        return (!quantity || quantity.checkValidity()) && (!destination || destination.checkValidity());
+    }
     function updateStockBalance() {
         const match = selectedMatch();
-        if (!match || preview.hidden) return;
+        if (!match || preview.hidden) { validateTransfer(); return; }
         let stock = preview.querySelector('.stock-location-balance');
         if (!stock) { stock = document.createElement('span'); stock.className = 'stock-location-balance'; preview.appendChild(stock); }
         if (!location?.value) { stock.textContent = 'Choose a location to view its current stock.'; return; }
         const sourceName = location.options[location.selectedIndex]?.textContent.trim() || 'selected location';
         const sourceQuantity = stockAt(match, location.value);
+        validateTransfer();
         if (movementType?.value === 'transfer' && destination?.value) {
             const destinationName = destination.options[destination.selectedIndex]?.textContent.trim() || 'destination';
             stock.textContent = `Available at ${sourceName}: ${sourceQuantity} ${match.option.dataset.unit} · Current at ${destinationName}: ${stockAt(match, destination.value)} ${match.option.dataset.unit}`;
@@ -97,8 +116,8 @@
         resolveProduct(true);
     });
     lookup.form?.addEventListener('submit', event => {
-        if (product.value || resolveProduct(false)) return;
-        event.preventDefault();
-        lookup.focus();
+        if (!product.value && !resolveProduct(false)) { event.preventDefault(); lookup.focus(); return; }
+        updateStockBalance();
+        if (!validateTransfer()) { event.preventDefault(); lookup.form.reportValidity(); }
     });
 })();

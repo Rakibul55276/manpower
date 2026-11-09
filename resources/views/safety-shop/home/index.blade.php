@@ -3,12 +3,12 @@
 @section('eyebrow','Harbour Edge · Safety Shop')
 @section('description','Start a sale, check stock, serve customers, and review today’s shop activity from one clear workspace.')
 @section('actions')
-@if(auth()->user()->canOperateSafetyShop())<a class="btn" href="{{ route('safety-shop.sales.create') }}">Open barcode checkout</a>@endif
+@if(auth()->user()->canOperateSafetyShop())<a class="btn" href="{{ route('safety-shop.sales.create') }}">POS</a>@endif
 @endsection
 @section('content')
 @include('safety-shop.shared.nav')
 <div class="card"><div class="card-head"><h2>What would you like to do?</h2><span class="badge">{{ now()->format('d M Y') }}</span></div><div class="card-body"><div class="quick-grid">
-@if(auth()->user()->canOperateSafetyShop())<a class="quick-action" href="{{ route('safety-shop.sales.create') }}"><strong>Start a sale</strong><span>Scan products, select a customer and take split payment.</span></a><a class="quick-action" href="{{ route('safety-shop.stock.create') }}"><strong>Receive or move stock</strong><span>Record receipts, transfers and adjustments.</span></a>@endif
+@if(auth()->user()->canOperateSafetyShop())<a class="quick-action" href="{{ route('safety-shop.sales.create') }}"><strong>Start a sale</strong><span>Scan products, select a customer and take split payment.</span></a>@endif @if(auth()->user()->canManageSafetyShopStock())<a class="quick-action" href="{{ route('safety-shop.stock.create') }}"><strong>Receive or move stock</strong><span>Record receipts, transfers and adjustments.</span></a>@endif
 <a class="quick-action" href="{{ route('safety-shop.returns.index') }}"><strong>Process a return</strong><span>Find the original receipt and restore returned stock.</span></a>
 <a class="quick-action" href="{{ route('safety-shop.customers.index') }}"><strong>Customer directory</strong><span>Retail and bulk customers in one place.</span></a>
 <a class="quick-action" href="{{ route('safety-shop.products.index') }}"><strong>Products and stock</strong><span>Search stock, prices, barcodes and reorder levels.</span></a>

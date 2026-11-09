@@ -6,6 +6,8 @@ use App\Modules\SafetyShop\Sales\Http\Controllers\DebitNoteController;
 Route::prefix('sales')->name('sales.')->group(function () {
     Route::get('/',[SaleController::class,'index'])->name('index');
     Route::get('/checkout',[SaleController::class,'create'])->middleware('shop_operator')->name('create');
+    Route::post('/checkout/customers',[SaleController::class,'quickCustomer'])->middleware('shop_operator')->name('quick-customer');
+    Route::post('/checkout/products',[SaleController::class,'quickProduct'])->middleware('shop_operator')->name('quick-product');
     Route::get('/quotation/{quotation}',[SaleController::class,'quotationData'])->middleware('shop_operator')->whereNumber('quotation')->name('quotation');
     Route::post('/',[SaleController::class,'store'])->middleware('shop_operator')->name('store');
     Route::get('/{sale}/draft',[SaleController::class,'editDraft'])->middleware('shop_operator')->whereNumber('sale')->name('draft');

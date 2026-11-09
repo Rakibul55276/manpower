@@ -8,6 +8,9 @@ Route::prefix('products')->name('products.')->group(function () {
         Route::get('/sku-suggestion',[ProductController::class,'skuSuggestion'])->name('sku-suggestion');
         Route::get('/create',[ProductController::class,'create'])->name('create');
         Route::post('/',[ProductController::class,'store'])->name('store');
+        Route::get('/{product}/barcode-label',[ProductController::class,'barcodeLabel'])->whereNumber('product')->name('barcode-label');
+    });
+    Route::middleware('company_admin')->group(function () {
         Route::get('/{product}/edit',[ProductController::class,'edit'])->name('edit');
         Route::put('/{product}',[ProductController::class,'update'])->name('update');
         Route::delete('/{product}',[ProductController::class,'destroy'])->name('destroy');
