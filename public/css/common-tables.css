@@ -14,13 +14,44 @@
     --app-table-cell-padding: 15px 18px;
     --app-table-head-size: 10px;
     --app-table-cell-size: 12px;
+    --app-table-head-height: 46px;
+    --app-table-scrollbar-size: 10px;
+    --app-table-scrollbar-track: #edf2f0;
+    --app-table-scrollbar-thumb: #9aadaa;
+    --app-table-scrollbar-thumb-hover: #6f8985;
 }
 
 .table-wrap {
     width: 100%;
     max-width: 100%;
     overflow-x: auto;
+    overflow-y: hidden;
     overscroll-behavior-inline: contain;
+    scrollbar-gutter: stable;
+    scrollbar-color: var(--app-table-scrollbar-thumb) var(--app-table-scrollbar-track);
+    scrollbar-width: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.table-wrap::-webkit-scrollbar {
+    width: var(--app-table-scrollbar-size);
+    height: var(--app-table-scrollbar-size);
+}
+
+.table-wrap::-webkit-scrollbar-track {
+    background: var(--app-table-scrollbar-track);
+    border-top: 1px solid var(--app-table-border);
+}
+
+.table-wrap::-webkit-scrollbar-thumb {
+    min-width: 48px;
+    border: 2px solid var(--app-table-scrollbar-track);
+    border-radius: 999px;
+    background: var(--app-table-scrollbar-thumb);
+}
+
+.table-wrap::-webkit-scrollbar-thumb:hover {
+    background: var(--app-table-scrollbar-thumb-hover);
 }
 
 .table-wrap > table:not(.receipt-pdf-table):not(.receipt-settlement) {
@@ -42,6 +73,7 @@
 }
 
 .table-wrap > table:not(.receipt-pdf-table):not(.receipt-settlement) th {
+    height: var(--app-table-head-height);
     padding: var(--app-table-head-padding);
     border-bottom: 1px solid var(--app-table-border);
     background: var(--app-table-head-bg);
@@ -51,6 +83,7 @@
     letter-spacing: 1px;
     line-height: 1.35;
     text-transform: uppercase;
+    vertical-align: middle;
     white-space: normal;
 }
 
@@ -106,6 +139,13 @@ col.table-col-40 { width: 40%; }
     :root {
         --app-table-head-padding: 11px 13px;
         --app-table-cell-padding: 13px;
+        --app-table-head-height: 44px;
+        --app-table-scrollbar-size: 13px;
+    }
+
+    .table-wrap {
+        /* Keep the bottom horizontal control visible and touch-friendly on narrow screens. */
+        scrollbar-width: auto;
     }
 }
 
