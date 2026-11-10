@@ -183,7 +183,9 @@ class SafetyShopTest extends TestCase
         $this->post(route('safety-shop.stock.store'),$this->movement('receipt',5))->assertSessionHasNoErrors();
         $this->post(route('safety-shop.sales.store'),$this->sale(1))->assertSessionHasNoErrors();
         $this->assertDatabaseHas('safety_shop_sales',['created_by'=>$issuer->id]);
+        $this->get(route('safety-shop.sales.index'))->assertOk()->assertDontSee('Net revenue excl. VAT')->assertDontSee('Net VAT');
         $this->login($this->manager);
+        $this->get(route('safety-shop.sales.index'))->assertOk()->assertSee('Net revenue excl. VAT')->assertSee('Net VAT')->assertSee('Total incl. VAT');
         $this->get(route('safety-shop.index'))->assertOk()->assertDontSee('Invoice system')->assertDontSee('ZATCA integration');
         config(['safety_shop.enabled'=>false]);
         $this->get(route('safety-shop.index'))->assertNotFound();
