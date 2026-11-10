@@ -15,8 +15,8 @@
 @if(auth()->user()->canApprove())<a class="quick-action" href="{{ route('safety-shop.reports.index') }}"><strong>Reports &amp; analytics</strong><span>Review financial, VAT, sales, inventory, movement, and return reports.</span></a>@endif
 </div></div></div>
 <div class="stats">
-<div class="stat"><div class="label">Sales today</div><div class="value">{{ number_format($metrics['sales_today']) }}</div>@if(auth()->user()->canApprove())<small>SAR {{ \App\Services\Pay::money($metrics['revenue_today']) }} received</small>@else<small>Completed transactions</small>@endif</div>
-@if(auth()->user()->canApprove())<div class="stat"><div class="label">This month</div><div class="value">{{ \App\Services\Pay::money($metrics['revenue_month']) }}</div><small>Total incl. VAT · SAR</small></div>@endif
+<div class="stat"><div class="label">Sales today</div><div class="value">{{ number_format($metrics['sales_today']) }}</div><small>SAR {{ \App\Services\Pay::money($metrics['revenue_today']) }} received</small></div>
+<div class="stat"><div class="label">This month</div><div class="value">{{ \App\Services\Pay::money($metrics['revenue_month']) }}</div><small>Total incl. VAT · SAR</small></div>
 <a class="stat stat-link" href="{{ route('safety-shop.customers.index') }}"><div class="label">Active customers</div><div class="value">{{ number_format($metrics['customers']) }}</div><small>{{ number_format($metrics['company_customers']) }} bulk customers</small></a>
 <a class="stat stat-link" href="{{ route('safety-shop.products.index',['low'=>1]) }}"><div class="label">Low stock</div><div class="value">{{ number_format($metrics['low']) }}</div><small>{{ number_format($metrics['units']) }} units in {{ number_format($metrics['locations']) }} locations</small></a>
 </div>
