@@ -19,14 +19,16 @@
     --app-table-scrollbar-track: #edf2f0;
     --app-table-scrollbar-thumb: #9aadaa;
     --app-table-scrollbar-thumb-hover: #6f8985;
+    --app-table-max-height: clamp(300px, 38vh, 520px);
 }
 
 .table-wrap {
     width: 100%;
     max-width: 100%;
-    overflow-x: auto;
-    overflow-y: hidden;
+    max-height: var(--app-table-max-height);
+    overflow: auto;
     overscroll-behavior-inline: contain;
+    overscroll-behavior-block: auto;
     scrollbar-gutter: stable;
     scrollbar-color: var(--app-table-scrollbar-thumb) var(--app-table-scrollbar-track);
     scrollbar-width: auto;
@@ -73,6 +75,9 @@
 }
 
 .table-wrap > table:not(.receipt-pdf-table):not(.receipt-settlement) th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
     height: var(--app-table-head-height);
     padding: var(--app-table-head-padding);
     border-bottom: 1px solid var(--app-table-border);
@@ -85,6 +90,7 @@
     text-transform: uppercase;
     vertical-align: middle;
     white-space: normal;
+    box-shadow: 0 1px 0 var(--app-table-border);
 }
 
 .table-wrap > table:not(.receipt-pdf-table):not(.receipt-settlement) td {
@@ -141,6 +147,7 @@ col.table-col-40 { width: 40%; }
         --app-table-cell-padding: 13px;
         --app-table-head-height: 44px;
         --app-table-scrollbar-size: 13px;
+        --app-table-max-height: clamp(260px, 44vh, 420px);
     }
 
     .table-wrap {
@@ -150,8 +157,18 @@ col.table-col-40 { width: 40%; }
 }
 
 @media print {
+    .table-wrap {
+        max-height: none;
+        overflow: visible;
+    }
+
     .table-wrap > table:not(.receipt-pdf-table):not(.receipt-settlement) {
         min-width: 0;
         table-layout: fixed;
+    }
+
+    .table-wrap > table:not(.receipt-pdf-table):not(.receipt-settlement) th {
+        position: static;
+        box-shadow: none;
     }
 }
