@@ -2,9 +2,17 @@
 @section('title','Safety shop analytics & audit')
 @section('eyebrow','Safety shop · Financial control')
 @section('description','Monitor revenue, refunds, inventory cost, profit or loss, and export a traceable audit report.')
+@section('head')<style>.report-hub{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:10px;margin-bottom:16px}.report-hub-card{display:flex;flex-direction:column;gap:5px;min-height:92px;padding:14px;border:1px solid #dbe4e7;border-radius:10px;background:#fff;color:#294954;text-decoration:none}.report-hub-card:hover{border-color:#168d7d;box-shadow:0 4px 14px rgba(20,74,91,.1)}.report-hub-card.active{background:#eaf6f3;border-color:#168d7d}.report-hub-card strong{font-size:13px}.report-hub-card span{font-size:10px;line-height:1.4;color:#687b82}@media(max-width:1100px){.report-hub{grid-template-columns:repeat(3,minmax(150px,1fr))}}@media(max-width:650px){.report-hub{grid-template-columns:1fr 1fr}}</style>@endsection
 @section('content')
 @include('safety-shop.shared.nav')
-<div class="card"><form class="filters" method="GET">
+<div class="report-hub" aria-label="Operational reports">
+<a class="report-hub-card active" href="#financial-performance"><strong>Financial &amp; VAT</strong><span>Revenue, VAT payable, cost, gross profit, margin, and audit exports.</span></a>
+<a class="report-hub-card" href="{{ route('safety-shop.sales.index') }}"><strong>Sales register</strong><span>Invoices, customers, payment status, and transaction history.</span></a>
+<a class="report-hub-card" href="{{ route('safety-shop.products.index') }}"><strong>Inventory position</strong><span>Stock on hand, reorder status, valuation, and product performance.</span></a>
+<a class="report-hub-card" href="{{ route('safety-shop.stock.index') }}"><strong>Movement ledger</strong><span>Receipts, issues, returns, adjustments, and location transfers.</span></a>
+<a class="report-hub-card" href="{{ route('safety-shop.returns.index') }}"><strong>Customer returns</strong><span>Credit notes, refunded values, restored stock, and responsible users.</span></a>
+</div>
+<div id="financial-performance" class="card"><form class="filters" method="GET">
 <div class="field"><label for="analytics-from">From date</label><input id="analytics-from" type="date" name="from" value="{{ request('from',$from->format('Y-m-d')) }}"></div>
 <div class="field"><label for="analytics-to">To date</label><input id="analytics-to" type="date" name="to" value="{{ request('to',$to->format('Y-m-d')) }}"></div>
 <button class="btn secondary">Apply period</button><a class="btn link" href="{{ route('safety-shop.reports.index') }}">Clear filters</a>
@@ -25,7 +33,7 @@
 </div></div>
 <div class="card"><div class="card-head"><h2>Calculation guide</h2></div><div class="card-body"><p><strong>Net revenue</strong> = sales after discounts, excluding VAT, less customer refunds excluding returned VAT.</p><p><strong>Net cost</strong> = historical cost of sold items less the historical cost restored by returns.</p><p><strong>Gross profit/loss</strong> = net revenue − net cost. Operating expenses are not included.</p></div></div>
 </div>
-<div class="card"><div class="card-head"><h2>Financial audit trail</h2><span class="badge">Latest {{ $events->count() }} in period</span></div><div class="table-wrap"><table><thead><tr><th>Date / transaction</th><th>Customer</th><th>Gross</th><th>Discount</th><th>VAT</th><th>Refund</th><th>Net revenue</th><th>Cost</th><th>Profit / loss</th><th>User</th></tr></thead><tbody>
+<div class="card"><div class="card-head"><h2>Financial audit trail</h2><span class="badge">Latest {{ $events->count() }} in period</span></div><div class="table-wrap"><table><thead><tr><th>Date / transaction</th><th>Customer</th><th>Gross</th><th>Discount</th><th>VAT</th><th>Refund</th><th>Net revenue</th><th>Cost</th><th>Gross profit / loss</th><th>User</th></tr></thead><tbody>
 @forelse($events as $event)<tr><td><strong>{{ $event->number }}</strong><span class="sub">{{ $event->date->format('d M Y H:i') }} · {{ $event->type }}@if($event->reference!=='—') · {{ $event->reference }}@endif</span></td><td>{{ $event->customer }}<span class="sub">{{ $event->location }}</span></td><td>{{ \App\Services\Pay::money($event->gross) }}</td><td>{{ \App\Services\Pay::money($event->discount) }}</td><td>{{ \App\Services\Pay::money($event->vat) }}</td><td>{{ \App\Services\Pay::money($event->refund) }}</td><td>{{ \App\Services\Pay::money($event->revenue) }}</td><td>{{ \App\Services\Pay::money($event->cost) }}</td><td><strong>{{ \App\Services\Pay::money($event->profit) }}</strong></td><td>{{ $event->user }}<span class="sub">{{ ucwords(str_replace('_',' ',$event->method)) }}</span></td></tr>@empty<tr><td colspan="10"><div class="empty">No financial transactions in this period.</div></td></tr>@endforelse
 </tbody></table></div></div>
 <h2 style="margin-top:28px">Inventory exports</h2>

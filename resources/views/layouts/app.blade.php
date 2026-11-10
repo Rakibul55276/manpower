@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>@yield('title', 'Dashboard') · {{ request()->is('safety-shop*')||session('active_module')==='safety-shop'?'Safety Shop':'Manpower' }}</title><link rel="icon" type="image/png" href="{{ asset('images/favicon.png') }}?v={{ filemtime(public_path('images/favicon.png')) }}"><link rel="stylesheet" href="{{ asset('css/manpower.css') }}"><link rel="stylesheet" href="{{ asset('css/navigation.css') }}"><link rel="stylesheet" href="{{ asset('css/analytics.css') }}"><link rel="stylesheet" href="{{ asset('css/table-sort.css') }}?v={{ filemtime(public_path('css/table-sort.css')) }}"><script defer src="{{ asset('js/table-sort.js') }}?v={{ filemtime(public_path('js/table-sort.js')) }}"></script>@yield('head')<script defer src="{{ asset('js/manpower.js') }}"></script></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>@yield('title', 'Dashboard') · {{ request()->is('safety-shop*')||session('active_module')==='safety-shop'?'Safety Shop':'Manpower' }}</title><link rel="icon" type="image/png" href="{{ asset('images/favicon.png') }}?v={{ (is_file(public_path('images/favicon.png')) ? filemtime(public_path('images/favicon.png')) : '1') }}"><link rel="stylesheet" href="{{ asset('css/manpower.css') }}"><link rel="stylesheet" href="{{ asset('css/navigation.css') }}"><link rel="stylesheet" href="{{ asset('css/analytics.css') }}"><link rel="stylesheet" href="{{ asset('css/table-sort.css') }}?v={{ (is_file(public_path('css/table-sort.css')) ? filemtime(public_path('css/table-sort.css')) : '1') }}"><script defer src="{{ asset('js/table-sort.js') }}?v={{ (is_file(public_path('js/table-sort.js')) ? filemtime(public_path('js/table-sort.js')) : '1') }}"></script>@yield('head')<script defer src="{{ asset('js/manpower.js') }}"></script></head>
 <body>
 @php $workspaceBrand = auth()->user()->isSuperAdmin() ? null : \App\Services\Documents::branding(); $workspaceLogo = $workspaceBrand ? \App\Services\Documents::brandingLogo($workspaceBrand) : null; $moduleContext=request()->is('safety-shop*')||session('active_module')==='safety-shop'?'safety-shop':'manpower'; @endphp
 <aside class="sidebar" id="sidebar"><a class="brand" href="{{ auth()->user()->isSuperAdmin() ? route('superadmin.index') : route($moduleContext==='safety-shop'?'safety-shop.index':'manpower.index') }}">@if($workspaceLogo)<span class="brand-mark" style="padding:3px;background:#fff"><img src="{{ $workspaceLogo }}" alt="{{ $workspaceBrand->company_name }} logo" style="width:100%;height:100%;object-fit:contain"></span>@else<span class="brand-mark">HE</span>@endif<span>{{ optional($workspaceBrand)->company_name ?: 'Harbour Edge' }}<small>{{ auth()->user()->isSuperAdmin() ? 'SYSTEM OWNER' : ($moduleContext==='safety-shop'?'SAFETY SHOP':(optional($workspaceBrand)->tagline ?: 'MANPOWER')) }}</small></span></a>
@@ -23,17 +23,17 @@
 <a class="nav-link {{ request()->routeIs('safety-shop.debit-notes.*')?'active':'' }}" href="{{ route('safety-shop.debit-notes.index') }}"><span class="nav-icon">＋</span> Debit notes</a>
 <a class="nav-link {{ request()->routeIs('safety-shop.sales.create')?'active':'' }}" href="{{ route('safety-shop.sales.create') }}"><span class="nav-icon">▥</span> Barcode checkout</a>
 <a class="nav-link {{ request()->routeIs('safety-shop.stock.index')?'active':'' }}" href="{{ route('safety-shop.stock.index') }}"><span class="nav-icon">⇄</span> Movement ledger</a>
-<a class="nav-link {{ request()->routeIs('safety-shop.stock.create')?'active':'' }}" href="{{ route('safety-shop.stock.create') }}"><span class="nav-icon">＋</span> New stock movement</a>
+@if(auth()->user()->canManageSafetyShopStock())<a class="nav-link {{ request()->routeIs('safety-shop.stock.create')?'active':'' }}" href="{{ route('safety-shop.stock.create') }}"><span class="nav-icon">＋</span> New stock movement</a>@endif
 </div>
 <button class="nav-label nav-section-toggle nav-subgroup-toggle" type="button" data-nav-section-toggle="safety-shop-masters" aria-expanded="true" aria-controls="nav-section-safety-shop-masters"><span>Master data</span><span class="nav-section-arrow" aria-hidden="true">⌄</span></button>
 <div class="nav-section nav-subgroup" id="nav-section-safety-shop-masters" data-nav-section="safety-shop-masters">
 <a class="nav-link {{ request()->routeIs('safety-shop.products.*')?'active':'' }}" href="{{ route('safety-shop.products.index') }}"><span class="nav-icon">▦</span> Products & stock</a>
-@foreach(['categories'=>'Categories','brands'=>'Brands','sizes'=>'Sizes / variants','units'=>'Stock units','safety-standards'=>'Safety standards','suppliers'=>'Suppliers','locations'=>'Locations','customers'=>'Customers'] as $feature=>$label)
+@foreach(['categories'=>'Categories','brands'=>'Brands','sizes'=>'Sizes','variants'=>'Variants / models','units'=>'Stock units','safety-standards'=>'Safety standards','suppliers'=>'Suppliers','locations'=>'Locations','customers'=>'Customers'] as $feature=>$label)
 <a class="nav-link {{ request()->routeIs('safety-shop.'.$feature.'.*')?'active':'' }}" href="{{ route('safety-shop.'.$feature.'.index') }}"><span class="nav-icon">◇</span> {{ $label }}</a>
 @endforeach
 </div>
 @if(auth()->user()->canApprove())
-<a class="nav-link {{ request()->routeIs('safety-shop.reports.*')?'active':'' }}" href="{{ route('safety-shop.reports.index') }}"><span class="nav-icon">≡</span> Shop analytics</a>
+<a class="nav-link {{ request()->routeIs('safety-shop.reports.*')?'active':'' }}" href="{{ route('safety-shop.reports.index') }}"><span class="nav-icon">≡</span> Reports &amp; analytics</a>
 @endif
 </div>
 @endif
@@ -62,7 +62,7 @@
 <a class="nav-link {{ request()->routeIs('salaries.*') ? 'active' : '' }}" href="{{ route('salaries.index') }}"><span class="nav-icon">▤</span> Monthly salaries</a>
 </div>
 @endif
-@if(false)
+@if($moduleContext==='manpower' && config('invoicing.enabled'))
 <button class="nav-label nav-section-toggle" type="button" data-nav-section-toggle="invoicing" aria-expanded="true" aria-controls="nav-section-invoicing"><span>Invoice system</span><span class="nav-section-arrow" aria-hidden="true">⌄</span></button>
 <div class="nav-section" id="nav-section-invoicing" data-nav-section="invoicing">
 <a class="nav-link {{ request()->routeIs('invoicing.index') || request()->routeIs('invoicing.show') ? 'active' : '' }}" href="{{ route('invoicing.index') }}"><span class="nav-icon">▤</span> Invoice directory</a>
@@ -73,15 +73,16 @@
 <a class="nav-link {{ request()->routeIs('invoicing.design.*') ? 'active' : '' }}" href="{{ route('invoicing.design.index') }}"><span class="nav-icon">✦</span> Invoice design studio</a>
 </div>
 @endif
-@if(false)
+@if($moduleContext==='safety-shop' && config('zatca.enabled') && auth()->user()->canApprove())
 <button class="nav-label nav-section-toggle" type="button" data-nav-section-toggle="zatca" aria-expanded="true" aria-controls="nav-section-zatca"><span>ZATCA integration</span><span class="nav-section-arrow" aria-hidden="true">⌄</span></button>
-<div class="nav-section" id="nav-section-zatca" data-nav-section="zatca"><a class="nav-link {{ request()->routeIs('zatca.*') ? 'active' : '' }}" href="{{ route('zatca.index') }}"><span class="nav-icon">◇</span> Integration center</a></div>
+<div class="nav-section" id="nav-section-zatca" data-nav-section="zatca"><a class="nav-link {{ request()->routeIs('safety-shop.zatca.*') ? 'active' : '' }}" href="{{ route('safety-shop.zatca.index') }}"><span class="nav-icon">◇</span> Integration center</a></div>
 @endif
 @if(auth()->user()->isCompanyAdmin() || auth()->user()->canApprove())
 <button class="nav-label nav-section-toggle" type="button" data-nav-section-toggle="organization" aria-expanded="true" aria-controls="nav-section-organization"><span>Organization</span><span class="nav-section-arrow" aria-hidden="true">⌄</span></button>
 <div class="nav-section" id="nav-section-organization" data-nav-section="organization">
 @if(auth()->user()->isCompanyAdmin())
 <a class="nav-link {{ request()->routeIs('company-users.*') ? 'active' : '' }}" href="{{ route('company-users.index') }}"><span class="nav-icon">⚙</span> Branch team access</a>
+@if($moduleContext==='safety-shop')<a class="nav-link {{ request()->routeIs('safety-shop.settings.*') ? 'active' : '' }}" href="{{ route('safety-shop.settings.branding.edit') }}"><span class="nav-icon">✦</span> Company branding</a>@endif
 @if($moduleContext==='manpower' && config('manpower.enabled'))
 <a class="nav-link {{ request()->routeIs('designations.*') ? 'active' : '' }}" href="{{ route('designations.index') }}"><span class="nav-icon">◇</span> Designations</a>
 @endif
