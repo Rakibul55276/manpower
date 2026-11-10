@@ -21,19 +21,19 @@ use Tests\TestCase;
 class SafetyShopTest extends TestCase
 {
     use RefreshDatabase;
-    private $admin; private $manager; private $company; private $product; private $location; private $destination; private $supplier;
+    private $admin; private $manager; private $company; private $product; private $location; private $destination; private $supplier; private $category;
     protected function setUp(): void
     {
         parent::setUp();
         config(['safety_shop.enabled'=>true,'invoicing.enabled'=>false,'zatca.enabled'=>false,'manpower.enabled'=>true]);
-        $this->admin=User::create(['name'=>'Shop Admin','username'=>'shopadmin','email'=>'shopadmin@test.local','password'=>Hash::make('Strong-password-123'),'role'=>'super_admin','is_active'=>true]);
-        $this->manager=User::create(['name'=>'Shop Reader','username'=>'shopreader','email'=>'shopreader@test.local','password'=>Hash::make('Strong-password-123'),'role'=>'manager','is_active'=>true]);
         $this->company=Company::create(['name'=>'Safety Shop Test Company','location'=>'Riyadh']);
-        $this->manager->update(['company_id'=>$this->company->id]);
+        $this->admin=User::create(['name'=>'Shop Admin','username'=>'shopadmin','email'=>'shopadmin@test.local','password'=>Hash::make('Strong-password-123'),'role'=>'admin','company_id'=>$this->company->id,'is_active'=>true]);
+        $this->manager=User::create(['name'=>'Shop Manager','username'=>'shopmanager','email'=>'shopmanager@test.local','password'=>Hash::make('Strong-password-123'),'role'=>'manager','company_id'=>$this->company->id,'is_active'=>true]);
         $this->location=Master::create(['company_id'=>$this->company->id,'type'=>'location','name'=>'Shop counter']);
         $this->destination=Master::create(['company_id'=>$this->company->id,'type'=>'location','name'=>'Warehouse']);
         $this->supplier=Master::create(['company_id'=>$this->company->id,'type'=>'supplier','name'=>'PPE Supplier']);
-        $this->product=Product::create(['company_id'=>$this->company->id,'sku'=>'HELMET-01','barcode'=>'001234567890','name'=>'Safety helmet','unit'=>'piece','cost_cents'=>1000,'price_cents'=>2500,'reorder_level'=>3]);
+        $this->category=Master::create(['company_id'=>$this->company->id,'type'=>'category','name'=>'Head Protection','sku_prefix'=>'HELMET','is_active'=>true]);
+        $this->product=Product::create(['company_id'=>$this->company->id,'sku'=>'HELMET-01','barcode'=>'001234567890','name'=>'Safety helmet','category_id'=>$this->category->id,'unit'=>'piece','cost_cents'=>1000,'price_cents'=>2500,'reorder_level'=>3]);
         \App\Modules\SafetyShop\Shared\Models\ReceiptSetting::create(['company_id'=>$this->company->id,'company_name'=>$this->company->name,'company_name_ar'=>'شركة اختبار متجر السلامة','vat_number'=>'314482276100003','commercial_registration'=>'1010000000','address'=>'Industrial Area','building_number'=>'1000','additional_number'=>'2000','street'=>'King Fahd Road','district'=>'Industrial District','city'=>'Riyadh','postal_code'=>'12345','country_code'=>'SA']);
     }
     private function login($user=null) { $user=$user??$this->admin; return $this->withSession(['password_hash_web'=>$user->getAuthPassword()])->actingAs($user); }
@@ -79,8 +79,9 @@ class SafetyShopTest extends TestCase
         $invalid=$this->movement('receipt',1,['company_id'=>$other->id,'product_id'=>$privateProduct->id]);
         $this->post(route('safety-shop.stock.store'),$invalid)->assertSessionHasErrors(['company_id','product_id']);
         $this->get('/company-branding')->assertNotFound();
-        $this->get(route('dashboard'))->assertOk()->assertDontSee('Full analytics & audit')->assertDontSee('Company inventory overview')->assertSee('Safety Shop analytics')->assertSee('Net revenue excl. VAT')->assertSee('Inventory value')->assertSee('Monthly movements');
-        $this->login($this->manager)->get(route('dashboard'))->assertOk()->assertSee('Safety Shop analytics')->assertSee('Net revenue excl. VAT');
+        $this->get(route('dashboard'))->assertRedirect(route('safety-shop.index'));
+        $this->get(route('safety-shop.index'))->assertOk()->assertSee('Sales today')->assertSee('Low stock')->assertSee('Products and stock');
+        $this->login($this->manager)->get(route('safety-shop.index'))->assertOk()->assertSee('Sales today')->assertSee('Low stock');
     }
     public function test_stock_receipt_can_store_and_download_private_supporting_document()
     {
@@ -118,20 +119,21 @@ class SafetyShopTest extends TestCase
     }
     public function test_sku_suggestion_uses_company_scoped_category_prefix()
     {
-        $category=Master::create(['company_id'=>$this->company->id,'type'=>'category','name'=>'Head Protection','sku_prefix'=>'SAFE','is_active'=>true]);
+        $category=$this->category;
+        $category->update(['sku_prefix'=>'SAFE']);
         Product::create(['company_id'=>$this->company->id,'sku'=>'SAFE-0001','name'=>'Existing helmet','unit'=>'piece','cost_cents'=>100,'price_cents'=>200,'reorder_level'=>1]);
         $other=Company::create(['name'=>'Other SKU Company','location'=>'Jeddah']);
         Product::create(['company_id'=>$other->id,'sku'=>'SAFE-0099','name'=>'Other helmet','unit'=>'piece','cost_cents'=>100,'price_cents'=>200,'reorder_level'=>1]);
         $this->login()->getJson(route('safety-shop.products.sku-suggestion',['company_id'=>$this->company->id,'category_id'=>$category->id]))->assertOk()->assertJson(['sku'=>'SAFE-0002','prefix'=>'SAFE']);
-        $this->getJson(route('safety-shop.products.sku-suggestion',['company_id'=>$other->id,'category_id'=>$category->id]))->assertNotFound();
+        $this->getJson(route('safety-shop.products.sku-suggestion',['company_id'=>$other->id,'category_id'=>$category->id]))->assertOk()->assertJson(['sku'=>'SAFE-0002','prefix'=>'SAFE']);
     }
     public function test_product_sku_and_barcode_are_unique_within_company_only()
     {
         $other=Company::create(['name'=>'Independent Catalog Company','location'=>'Jeddah']);
-        $payload=['company_id'=>$other->id,'sku'=>$this->product->sku,'barcode'=>$this->product->barcode,'name'=>'Other company helmet','unit'=>'piece','reorder_level'=>0,'cost'=>'10.00','price'=>'20.00','is_active'=>1];
-        $this->login()->post(route('safety-shop.products.store'),$payload)->assertSessionHasNoErrors();
-        $this->assertDatabaseHas('safety_shop_products',['company_id'=>$other->id,'sku'=>$this->product->sku,'barcode'=>$this->product->barcode]);
-        $payload['name']='Duplicate in same company';
+        $payload=['company_id'=>$other->id,'category_id'=>$this->category->id,'sku'=>$this->product->sku,'barcode'=>$this->product->barcode,'name'=>'Forged company helmet','unit'=>'piece','reorder_level'=>0,'cost'=>'10.00','price'=>'20.00','is_active'=>1];
+        $this->login()->post(route('safety-shop.products.store'),$payload)->assertSessionHasErrors(['sku','barcode']);
+        $this->assertDatabaseMissing('safety_shop_products',['company_id'=>$other->id,'sku'=>$this->product->sku]);
+        $payload['name']='Duplicate in current company';
         $this->post(route('safety-shop.products.store'),$payload)->assertSessionHasErrors(['sku','barcode']);
     }
     public function test_receipt_issue_return_and_adjustment_keep_ledger_and_balances()
@@ -177,10 +179,10 @@ class SafetyShopTest extends TestCase
         $this->get(route('safety-shop.categories.index'))->assertOk();
         $this->get(route('safety-shop.reports.index'))->assertOk();
         $issuer=User::create(['name'=>'Shop Issuer','username'=>'shopissuer','email'=>'shopissuer@test.local','password'=>Hash::make('Strong-password-123'),'role'=>'issuer','company_id'=>$this->company->id,'is_active'=>true]);
+        $this->login()->post(route('safety-shop.stock.store'),$this->movement('receipt',5))->assertSessionHasNoErrors();
         $this->login($issuer)->get(route('safety-shop.sales.create'))->assertOk();
-        $this->get(route('safety-shop.stock.create'))->assertOk();
+        $this->get(route('safety-shop.stock.create'))->assertForbidden();
         $this->get(route('safety-shop.reports.index'))->assertForbidden();
-        $this->post(route('safety-shop.stock.store'),$this->movement('receipt',5))->assertSessionHasNoErrors();
         $this->post(route('safety-shop.sales.store'),$this->sale(1))->assertSessionHasNoErrors();
         $this->assertDatabaseHas('safety_shop_sales',['created_by'=>$issuer->id]);
         $this->login($this->manager);
@@ -188,7 +190,8 @@ class SafetyShopTest extends TestCase
         config(['safety_shop.enabled'=>false]);
         $this->get(route('safety-shop.index'))->assertNotFound();
         $this->post(route('safety-shop.stock.store'),$this->movement())->assertNotFound();
-        $this->get(route('dashboard'))->assertOk()->assertDontSee('Stock overview')->assertSee('Monthly salaries');
+        $this->get(route('dashboard'))->assertRedirect(route('manpower.index'));
+        $this->get(route('manpower.index'))->assertOk()->assertDontSee('Stock overview')->assertSee('Monthly salaries');
     }
     public function test_bulk_customer_invoice_keeps_eight_items_on_one_page_and_moves_ninth_to_page_two()
     {
@@ -290,10 +293,10 @@ class SafetyShopTest extends TestCase
     }
     public function test_product_barcode_and_prices_can_be_saved_and_barcode_is_unique()
     {
-        $payload=['company_id'=>$this->company->id,'sku'=>'GLOVE-01','barcode'=>'000001','name'=>'Safety gloves','unit'=>'pair','cost'=>'3.07','price'=>'8.90','reorder_level'=>2,'is_active'=>1];
+        $payload=['company_id'=>$this->company->id,'category_id'=>$this->category->id,'sku'=>'HELMET-0002','barcode'=>'000001','name'=>'Safety gloves','unit'=>'pair','cost'=>'3.07','price'=>'8.90','price_includes_vat'=>0,'tax_category'=>'S','reorder_level'=>2,'is_active'=>1];
         $this->login()->post(route('safety-shop.products.store'),$payload)->assertSessionHasNoErrors();
         $this->assertDatabaseHas('safety_shop_products',['barcode'=>'000001','cost_cents'=>307,'price_cents'=>890]);
-        $payload['sku']='GLOVE-02';
+        $payload['sku']='HELMET-0003';
         $this->post(route('safety-shop.products.store'),$payload)->assertSessionHasErrors('barcode');
         $this->get(route('safety-shop.products.edit',$this->product))->assertOk()->assertSee('Selling price')->assertSee('Barcode');
         $this->get(route('safety-shop.suppliers.index'))->assertOk()->assertSee('PPE Supplier');
@@ -301,10 +304,10 @@ class SafetyShopTest extends TestCase
     public function test_product_gets_a_company_scoped_internal_barcode_when_left_blank()
     {
         $companyAdmin=User::create(['name'=>'Catalog Admin','username'=>'catalog_admin','email'=>'catalog_admin@test.local','password'=>Hash::make('Strong-password-123'),'role'=>'admin','company_id'=>$this->company->id,'is_active'=>true]);
-        $payload=['company_id'=>$this->company->id,'sku'=>'AUTO-01','barcode'=>'','name'=>'Auto barcode gloves','unit'=>'pair','cost'=>'3.07','price'=>'8.90','reorder_level'=>2,'is_active'=>1];
+        $payload=['company_id'=>$this->company->id,'category_id'=>$this->category->id,'sku'=>'HELMET-0004','barcode'=>'','name'=>'Auto barcode gloves','unit'=>'pair','cost'=>'3.07','price'=>'8.90','price_includes_vat'=>0,'tax_category'=>'S','reorder_level'=>2,'is_active'=>1];
         $this->login($companyAdmin)->post(route('safety-shop.products.store'),$payload)->assertSessionHasNoErrors();
 
-        $product=Product::where('sku','AUTO-01')->firstOrFail();
+        $product=Product::where('sku','HELMET-0004')->firstOrFail();
         $this->assertMatchesRegularExpression('/^2\d{12}$/',$product->barcode);
         $this->assertSame(str_pad((string)$this->company->id,5,'0',STR_PAD_LEFT),substr($product->barcode,1,5));
 
@@ -318,21 +321,68 @@ class SafetyShopTest extends TestCase
         $this->getJson(route('safety-shop.barcode',['barcode'=>'001234567890','location_id'=>$this->location->id]))->assertOk()->assertJson(['id'=>$this->product->id,'price_cents'=>2500,'available'=>10]);
         $payload=$this->sale();
         $this->post(route('safety-shop.sales.store'),$payload)->assertSessionHasNoErrors();
-        $sale=Sale::firstOrFail(); $this->assertSame(5000,$sale->total_cents); $this->assertSame(6000,$sale->paid_cents); $this->assertSame('+966 55 123 4567',$sale->customer_phone);
+        $sale=Sale::firstOrFail(); $this->assertSame(5750,$sale->total_cents); $this->assertSame(6000,$sale->paid_cents); $this->assertSame('+966 55 123 4567',$sale->customer_phone);
         $this->assertDatabaseHas('safety_shop_stocks',['product_id'=>$this->product->id,'quantity'=>8]);
         $this->assertDatabaseHas('safety_shop_movements',['reference'=>'SALE-'.$sale->id,'quantity'=>-2]);
         $this->product->update(['name'=>'Updated helmet','price_cents'=>3500]);
-        $this->get(route('safety-shop.sales.show',$sale))->assertOk()->assertSee('Safety helmet')->assertSee('Print receipt')->assertSee('+966 55 123 4567')->assertSee('10.00');
+        $this->get(route('safety-shop.sales.show',$sale))->assertOk()->assertSee('Safety helmet')->assertSee('Download A4 PDF')->assertSee('+966 55 123 4567')->assertSee('SAR 57.50');
         $this->post(route('safety-shop.sales.store'),$payload)->assertSessionHasErrors('request_key');
         $this->assertDatabaseCount('safety_shop_sales',1);
         $this->assertDatabaseCount('invoices',0);
+    }
+
+    public function test_invoice_extracts_standard_vat_when_product_price_includes_vat()
+    {
+        $this->product->update([
+            'price_cents'=>11500,
+            'price_includes_vat'=>true,
+            'tax_category'=>'S',
+            'tax_rate_units'=>1500,
+        ]);
+        $this->receive();
+        $payload=$this->sale(1,['paid'=>'115.00']);
+        $payload['lines'][0]['price_cents']=11500;
+
+        $this->post(route('safety-shop.sales.store'),$payload)->assertSessionHasNoErrors();
+
+        $sale=Sale::with('lines')->firstOrFail();
+        $line=$sale->lines->first();
+        $this->assertSame(10000,$sale->taxable_cents);
+        $this->assertSame(1500,$sale->tax_cents);
+        $this->assertSame(11500,$sale->total_cents);
+        $this->assertTrue($line->price_includes_vat);
+        $this->assertSame(10000,$line->unit_net_price_cents);
+    }
+
+    public function test_invoice_preserves_valid_zero_rated_product_reason()
+    {
+        $this->product->update([
+            'price_cents'=>10000,
+            'price_includes_vat'=>false,
+            'tax_category'=>'Z',
+            'tax_rate_units'=>0,
+            'tax_exemption_reason_code'=>'VATEX-SA-35',
+            'tax_exemption_reason'=>'Qualifying medicines and medical equipment',
+        ]);
+        $this->receive();
+        $payload=$this->sale(1,['paid'=>'100.00']);
+        $payload['lines'][0]['price_cents']=10000;
+
+        $this->post(route('safety-shop.sales.store'),$payload)->assertSessionHasNoErrors();
+
+        $sale=Sale::with('lines')->firstOrFail();
+        $line=$sale->lines->first();
+        $this->assertSame(0,$sale->tax_cents);
+        $this->assertSame(10000,$sale->total_cents);
+        $this->assertSame('Z',$line->tax_category);
+        $this->assertSame('VATEX-SA-35',$line->tax_exemption_reason_code);
     }
     public function test_failed_multiline_sale_rolls_back_all_stock_and_sales()
     {
         $this->receive();
         $second=Product::create(['company_id'=>$this->company->id,'sku'=>'EMPTY','barcode'=>'EMPTY','name'=>'Empty product','unit'=>'piece','price_cents'=>100]);
         $payload=$this->sale(2,['paid'=>'100.00']); $payload['lines'][]=['product_id'=>$second->id,'quantity'=>1,'price_cents'=>100];
-        $this->post(route('safety-shop.sales.store'),$payload)->assertSessionHasErrors('quantity');
+        $this->post(route('safety-shop.sales.store'),$payload)->assertSessionHasErrors('lines');
         $this->assertDatabaseCount('safety_shop_sales',0); $this->assertDatabaseCount('safety_shop_sale_lines',0);
         $this->assertDatabaseCount('safety_shop_movements',1); $this->assertSame(10,(int)Stock::sum('quantity'));
         $this->assertDatabaseMissing('safety_shop_stocks',['product_id'=>$second->id]);
@@ -344,7 +394,7 @@ class SafetyShopTest extends TestCase
         $this->post(route('safety-shop.sales.store'),$this->sale(2,['paid'=>'1.00']))->assertSessionHasNoErrors();
         $partial=Sale::firstOrFail();
         $this->assertSame('partially_paid',$partial->payment_status);
-        $this->assertSame(4900,$partial->balance_due_cents);
+        $this->assertSame(5650,$partial->balance_due_cents);
         $payload=$this->sale(); $payload['lines'][0]['price_cents']=1;
         $this->post(route('safety-shop.sales.store'),$payload)->assertSessionHasErrors('lines');
         $payload=$this->sale(); $payload['lines'][]=$payload['lines'][0];
@@ -361,17 +411,17 @@ class SafetyShopTest extends TestCase
         $this->assertSame('Eastern Engineering',$customer->name);
         $this->assertSame('+966551234567',$customer->phone);
         $this->assertSame(1,$customer->purchase_count);
-        $this->assertSame(5000,$customer->lifetime_value_cents);
+        $this->assertSame(5750,$customer->lifetime_value_cents);
         $this->assertDatabaseHas('safety_shop_sales',['customer_id'=>$customer->id,'customer_email'=>'buyer@example.com','customer_address'=>'Industrial Area, Riyadh']);
 
         $second=$this->sale(1,['customer_id'=>$customer->id,'customer'=>'Eastern Engineering','customer_phone'=>'+966551234567','customer_email'=>'accounts@example.com','customer_address'=>'Updated Riyadh address']);
         $this->post(route('safety-shop.sales.store'),$second)->assertSessionHasNoErrors();
         $customer->refresh();
         $this->assertSame(2,$customer->purchase_count);
-        $this->assertSame(7500,$customer->lifetime_value_cents);
-        $this->assertSame('accounts@example.com',$customer->email);
+        $this->assertSame(8625,$customer->lifetime_value_cents);
+        $this->assertSame('buyer@example.com',$customer->email);
         $this->assertDatabaseCount('safety_shop_customers',1);
-        $this->get(route('safety-shop.sales.create'))->assertOk()->assertSee('Saved customer')->assertSee('Eastern Engineering')->assertSee('accounts@example.com');
+        $this->get(route('safety-shop.sales.create'))->assertOk()->assertSee('Saved customer')->assertSee('Eastern Engineering')->assertSee('buyer@example.com');
     }
     public function test_discount_vat_and_split_payments_are_calculated_and_printed()
     {
@@ -390,7 +440,7 @@ class SafetyShopTest extends TestCase
         $this->assertSame(2000,$sale->cash_cents); $this->assertSame(2600,$sale->card_cents);
         $this->assertSame('split',$sale->payment_method);
         $this->assertSame('Deliver with the approved purchase order.',$sale->invoice_notes);
-        $this->get(route('safety-shop.sales.show',$sale))->assertOk()->assertSee('SKU HELMET-01')->assertDontSee('001234567890')->assertSee('Discount (SAR)')->assertSee('VAT Amount')->assertSee('Cash 20.00')->assertSee('Card 26.00')->assertSee('Deliver with the approved purchase order.');
+        $this->get(route('safety-shop.sales.show',$sale))->assertOk()->assertSee('SKU HELMET-01')->assertDontSee('001234567890')->assertSee('Discount')->assertSee('VAT amount')->assertSeeInOrder(['Cash','20.00'])->assertSeeInOrder(['Card','26.00'])->assertSee('Deliver with the approved purchase order.');
 
         $invalid=$this->sale(1,['discount'=>'30.00','tax_rate'=>'15','cash_paid'=>'0','card_paid'=>'0','bank_paid'=>'0']);
         unset($invalid['payment_method'],$invalid['paid']);
@@ -412,7 +462,7 @@ class SafetyShopTest extends TestCase
         $this->post(route('safety-shop.returns.store'),$payload)->assertSessionHasNoErrors();
         $return=SaleReturn::firstOrFail();
         $this->assertStringStartsWith('CN-',$return->credit_note_number);
-        $this->assertSame(2500,$return->refund_cents);
+        $this->assertSame(2875,$return->refund_cents);
         $this->assertDatabaseHas('safety_shop_stocks',['product_id'=>$this->product->id,'location_id'=>$this->location->id,'quantity'=>9]);
         $this->assertDatabaseHas('safety_shop_movements',['reference'=>'RETURN-'.$return->id.' / SALE-'.$sale->id,'quantity'=>1]);
         $this->get(route('safety-shop.returns.show',$return))->assertOk()->assertSee($return->credit_note_number)->assertSee($sale->invoice_number)->assertSee('Counter customer')->assertSee('Unused item in original condition');
@@ -451,13 +501,63 @@ class SafetyShopTest extends TestCase
         $this->assertSame(2000,$report['summary']['net_revenue']);
         $this->assertSame(1000,$report['summary']['net_cogs']);
         $this->assertSame(1000,$report['summary']['gross_profit']);
+        $this->assertSame(600,$report['summary']['gross_vat']);
+        $this->assertSame(300,$report['summary']['vat_refunds']);
         $this->assertSame(300,$report['summary']['vat_collected']);
-        $this->get(route('safety-shop.reports.index'))->assertOk()->assertSee('Financial audit trail')->assertSee('Gross profit / loss');
-        $this->get(route('dashboard',['month'=>now()->format('Y-m')]))->assertOk()->assertSee('Safety Shop summary')->assertSee('Gross revenue excl. VAT')->assertSee('Net revenue excl. VAT')->assertSee('Inventory value');
+        $this->get(route('safety-shop.reports.index'))->assertOk()->assertSee('Financial audit trail')->assertSee('Gross profit / loss')->assertSee('Gross VAT collected');
+        $this->get(route('safety-shop.index',['month'=>now()->format('Y-m')]))->assertOk()->assertSee('Sales today')->assertSee('This month')->assertSee('Low stock');
         $csv=$this->get(route('safety-shop.reports.financial.csv'))->assertOk();
         $this->assertStringContainsString('SALE-'.$sale->id,$csv->streamedContent());
         $this->assertStringContainsString('RETURN-'.SaleReturn::firstOrFail()->id,$csv->streamedContent());
         $this->get(route('safety-shop.reports.financial.pdf'))->assertOk()->assertHeader('Content-Type','application/pdf');
+    }
+    public function test_product_directory_reports_period_net_units_revenue_and_margin_excluding_vat(): void
+    {
+        $this->receive();
+        $this->post(route('safety-shop.sales.store'),$this->sale(2))->assertSessionHasNoErrors();
+        $sale=Sale::with('lines')->firstOrFail();
+        $this->post(route('safety-shop.returns.store'),[
+            'request_key'=>(string)Str::uuid(),
+            'sale_id'=>$sale->id,
+            'refund_method'=>'cash',
+            'reason'=>'One unit returned for reporting test',
+            'lines'=>[['sale_line_id'=>$sale->lines->first()->id,'quantity'=>1,'barcode'=>$this->product->barcode]],
+        ])->assertSessionHasNoErrors();
+
+        $response=$this->get(route('safety-shop.products.index',[
+            'period'=>'month',
+            'month'=>now()->format('Y-m'),
+        ]))->assertOk()->assertSee('Net quantity sold')->assertSee('Revenue excl. VAT / margin');
+        $row=$response->viewData('products')->firstWhere('id',$this->product->id);
+        $this->assertSame(1,(int)$row->period_sold_quantity);
+        $this->assertSame(2500,(int)$row->period_revenue_cents);
+        $this->assertSame(1000,(int)$row->period_cost_cents);
+        $response->assertSee('Profit 15.00 · Margin 60.00%');
+    }
+
+    public function test_product_performance_excludes_drafts_and_validates_custom_dates(): void
+    {
+        $this->receive();
+        $this->post(route('safety-shop.sales.store'), $this->sale(2, [
+            'submit_action' => 'draft',
+            'paid' => '0.00',
+            'cash_paid' => '0.00',
+        ]))->assertSessionHasNoErrors();
+
+        $response = $this->get(route('safety-shop.products.index', [
+            'period' => 'month',
+            'month' => now()->format('Y-m'),
+        ]))->assertOk();
+        $row = $response->viewData('products')->firstWhere('id', $this->product->id);
+
+        $this->assertSame(0, (int) $row->period_sold_quantity);
+        $this->assertSame(0, (int) $row->period_revenue_cents);
+        $this->assertSame(0, (int) $row->period_cost_cents);
+
+        $this->from(route('safety-shop.products.index'))
+            ->get(route('safety-shop.products.index', ['period' => 'custom']))
+            ->assertRedirect(route('safety-shop.products.index'))
+            ->assertSessionHasErrors(['from', 'to']);
     }
     public function test_feature_directories_have_separate_pages_and_master_types()
     {
@@ -597,12 +697,12 @@ class SafetyShopTest extends TestCase
         $this->post(route('safety-shop.sales.payments.store',$sale),['payment_date'=>now()->toDateString(),'method'=>'bank','amount'=>'10.00','reference'=>'BANK-001'])->assertSessionHasNoErrors();
         $sale->refresh();
         $this->assertSame('partially_paid',$sale->payment_status);
-        $this->assertSame(4000,$sale->balance_due_cents);
+        $this->assertSame(4750,$sale->balance_due_cents);
         $this->assertFalse($sale->payment_received);
         $this->get(route('safety-shop.sales.show',$sale))->assertOk()->assertSee('PARTIALLY PAID')->assertSee('مدفوع جزئياً');
         $this->get(route('safety-shop.sales.pdf',$sale))->assertOk()->assertHeader('Content-Type','application/pdf');
 
-        $this->post(route('safety-shop.sales.payments.store',$sale),['payment_date'=>now()->toDateString(),'method'=>'cash','amount'=>'40.00','reference'=>'RCPT-002'])->assertSessionHasNoErrors();
+        $this->post(route('safety-shop.sales.payments.store',$sale),['payment_date'=>now()->toDateString(),'method'=>'cash','amount'=>'47.50','reference'=>'RCPT-002'])->assertSessionHasNoErrors();
         $sale->refresh();
         $this->assertSame('paid',$sale->payment_status);
         $this->assertTrue($sale->payment_received);
