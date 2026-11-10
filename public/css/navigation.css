@@ -20,6 +20,59 @@
     flex: 0 0 auto;
 }
 
+/* Shared page identity: title, description, and actions use one layout everywhere. */
+.page-head {
+    position: sticky;
+    top: 78px;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 24px;
+    min-height: 112px;
+    margin-bottom: 24px;
+    padding: 8px 0;
+    border-bottom: 1px solid transparent;
+    background: var(--bg);
+}
+
+.page-head-copy {
+    min-width: 0;
+    max-width: 980px;
+}
+
+.page-head-copy .eyebrow {
+    min-height: 14px;
+    margin-bottom: 6px;
+}
+
+.page-head-copy h1 {
+    display: -webkit-box;
+    overflow: hidden;
+    margin-bottom: 8px;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+.page-head-copy .description {
+    min-height: 20px;
+    margin: 0;
+}
+
+.page-head-actions {
+    justify-content: flex-end;
+    align-self: center;
+    max-width: 620px;
+}
+
+.page-head-actions > form {
+    margin: 0;
+}
+
+.page-head-actions .btn {
+    min-height: 40px;
+}
+
 .menu-toggle:hover {
     background: #f0f6f3;
 }
@@ -156,10 +209,30 @@ html {
         border: 0;
         font-size: 22px;
     }
+
+    .page-head {
+        top: 67px;
+        grid-template-columns: minmax(0, 1fr);
+        align-items: start;
+        gap: 14px;
+        min-height: 0;
+        margin-bottom: 20px;
+        padding: 4px 0;
+    }
+
+    .page-head-actions {
+        justify-content: flex-start;
+        width: 100%;
+        max-width: none;
+    }
 }
 
 @media print {
     .menu-toggle {
         display: none !important;
+    }
+
+    .page-head {
+        position: static;
     }
 }
