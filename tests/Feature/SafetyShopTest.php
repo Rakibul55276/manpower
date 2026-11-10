@@ -539,6 +539,26 @@ class SafetyShopTest extends TestCase
         $this->delete(route('safety-shop.products.destroy',$this->product))->assertSessionHasErrors('delete');
         $this->assertDatabaseHas('safety_shop_products',['id'=>$this->product->id]);
     }
+
+    public function test_company_admin_can_bulk_delete_unused_products_and_used_products_are_skipped()
+    {
+        $companyAdmin=User::create(['name'=>'Bulk Catalog Admin','username'=>'bulk_catalog_admin','email'=>'bulk_catalog_admin@test.local','password'=>Hash::make('Strong-password-123'),'role'=>'admin','company_id'=>$this->company->id,'is_active'=>true]);
+        $unusedA=Product::create(['company_id'=>$this->company->id,'sku'=>'BULK-0001','name'=>'Bulk unused A','unit'=>'piece','cost_cents'=>100,'price_cents'=>200,'reorder_level'=>0]);
+        $unusedB=Product::create(['company_id'=>$this->company->id,'sku'=>'BULK-0002','name'=>'Bulk unused B','unit'=>'piece','cost_cents'=>100,'price_cents'=>200,'reorder_level'=>0]);
+
+        $this->login($this->manager)->delete(route('safety-shop.products.bulk-destroy'),['products'=>[$unusedA->id,$unusedB->id]])->assertForbidden();
+        $this->login($companyAdmin)->get(route('safety-shop.products.index'))->assertOk()->assertSee('bulk-product-delete-form')->assertSee('Delete selected');
+        $this->delete(route('safety-shop.products.bulk-destroy'),['products'=>[$unusedA->id,$unusedB->id]])->assertRedirect(route('safety-shop.products.index'))->assertSessionHas('success');
+        $this->assertDatabaseMissing('safety_shop_products',['id'=>$unusedA->id]);
+        $this->assertDatabaseMissing('safety_shop_products',['id'=>$unusedB->id]);
+
+        $protected=Product::create(['company_id'=>$this->company->id,'sku'=>'BULK-0003','name'=>'Bulk protected','unit'=>'piece','cost_cents'=>100,'price_cents'=>200,'reorder_level'=>0]);
+        Stock::create(['product_id'=>$protected->id,'location_id'=>$this->location->id,'quantity'=>1]);
+        $unusedC=Product::create(['company_id'=>$this->company->id,'sku'=>'BULK-0004','name'=>'Bulk unused C','unit'=>'piece','cost_cents'=>100,'price_cents'=>200,'reorder_level'=>0]);
+        $this->delete(route('safety-shop.products.bulk-destroy'),['products'=>[$protected->id,$unusedC->id]])->assertRedirect(route('safety-shop.products.index'))->assertSessionHasErrors('delete');
+        $this->assertDatabaseHas('safety_shop_products',['id'=>$protected->id]);
+        $this->assertDatabaseMissing('safety_shop_products',['id'=>$unusedC->id]);
+    }
     public function test_admin_can_void_and_replace_invoice_with_stock_and_audit_links()
     {
         $companyAdmin=User::create(['name'=>'Invoice Admin','username'=>'invoice_admin','email'=>'invoice_admin@test.local','password'=>Hash::make('Strong-password-123'),'role'=>'admin','company_id'=>$this->company->id,'is_active'=>true]);

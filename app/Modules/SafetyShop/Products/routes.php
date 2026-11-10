@@ -11,6 +11,7 @@ Route::prefix('products')->name('products.')->group(function () {
         Route::get('/{product}/barcode-label',[ProductController::class,'barcodeLabel'])->whereNumber('product')->name('barcode-label');
     });
     Route::middleware('company_admin')->group(function () {
+        Route::delete('/bulk',[ProductController::class,'bulkDestroy'])->name('bulk-destroy');
         Route::get('/{product}/edit',[ProductController::class,'edit'])->name('edit');
         Route::put('/{product}',[ProductController::class,'update'])->name('update');
         Route::delete('/{product}',[ProductController::class,'destroy'])->name('destroy');

@@ -159,11 +159,7 @@ class ProductController extends Controller
     {
         $this->authorizeCompany($product);
         abort_unless(auth()->user()->isCompanyAdmin(), 403);
-        $usedInTransactions = $product->movements()->exists()
-            || $product->stocks()->where('quantity', '<>', 0)->exists()
-            || DB::table('safety_shop_sale_lines')->where('product_id', $product->id)->exists()
-            || DB::table('commercial_document_lines')->where('product_id', $product->id)->exists();
-        if ($usedInTransactions) {
+        if ($this->isUsedInTransactions($product)) {
             return back()->withErrors(['delete' => 'This product is used in transaction data. Delete its related sales, stock movements, quotations, and delivery-note transactions first, or set the product inactive to preserve the audit trail.']);
         }
         $imagePath=$product->image_path;
@@ -174,6 +170,58 @@ class ProductController extends Controller
         });
         if($imagePath)Storage::disk('public')->delete($imagePath);
         return redirect()->route('safety-shop.products.index')->with('success', 'Unused product deleted.');
+    }
+
+    public function bulkDestroy(Request $request)
+    {
+        abort_unless($request->user()->isCompanyAdmin(), 403);
+        $companyId = (int) $request->user()->company_id;
+        $data = $request->validate([
+            'products' => ['required', 'array', 'min:2', 'max:100'],
+            'products.*' => ['required', 'integer', 'distinct', Rule::exists('safety_shop_products', 'id')->where(fn ($query) => $query->where('company_id', $companyId))],
+        ]);
+
+        $deleted = 0;
+        $skipped = [];
+        $imagePaths = [];
+
+        DB::transaction(function () use ($data, $companyId, &$deleted, &$skipped, &$imagePaths) {
+            $products = Product::where('company_id', $companyId)
+                ->whereIn('id', $data['products'])
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
+
+            foreach ($products as $product) {
+                if ($this->isUsedInTransactions($product)) {
+                    $skipped[] = $product->sku;
+                    continue;
+                }
+
+                $product->stocks()->delete();
+                ActivityLog::record('Deleted unused safety shop product', $product->sku);
+                if ($product->image_path) $imagePaths[] = $product->image_path;
+                $product->delete();
+                $deleted++;
+            }
+        });
+
+        foreach ($imagePaths as $imagePath) Storage::disk('public')->delete($imagePath);
+
+        $redirect = redirect()->route('safety-shop.products.index');
+        if ($deleted > 0) $redirect->with('success', $deleted.' unused '.($deleted === 1 ? 'product' : 'products').' deleted.');
+        if ($skipped) {
+            $redirect->withErrors(['delete' => count($skipped).' selected '.(count($skipped) === 1 ? 'product was' : 'products were').' skipped because transaction or stock history exists: '.implode(', ', $skipped).'. Set '.(count($skipped) === 1 ? 'it' : 'them').' inactive to preserve the audit trail.']);
+        }
+        return $redirect;
+    }
+
+    private function isUsedInTransactions(Product $product): bool
+    {
+        return $product->movements()->exists()
+            || $product->stocks()->where('quantity', '<>', 0)->exists()
+            || DB::table('safety_shop_sale_lines')->where('product_id', $product->id)->exists()
+            || DB::table('commercial_document_lines')->where('product_id', $product->id)->exists();
     }
 
     private function authorizeCompany(Product $product): void { abort_unless((int)$product->company_id===(int)auth()->user()->company_id,404); }
