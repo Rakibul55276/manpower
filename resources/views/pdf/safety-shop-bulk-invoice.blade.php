@@ -79,7 +79,7 @@ body.compact-eight .invoice-brand{margin-bottom:3pt}body.compact-eight .invoice-
 $ar=fn($text)=>\App\Modules\Invoicing\Services\InvoiceService::arabicPdf($text);
 $customer=$sale->customerRecord;
 $invoiceTitleEn='VAT INVOICE';
-$invoiceTitleAr='فاتورة ضريبة القيمة المضافة';
+$invoiceTitleAr='فاتورة ضريبية';
 $printedInvoiceNotes=mb_strlen((string)$sale->invoice_notes)>250 ? mb_substr((string)$sale->invoice_notes,0,247).'...' : ($sale->invoice_notes ?: '—');
 $contact=$sale->customer_contact_person ?: optional($customer)->contact_person;
 $phone=$sale->customer_phone ?: optional($customer)->phone;

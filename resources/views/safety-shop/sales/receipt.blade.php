@@ -5,7 +5,7 @@
 @section('content')
 @php
 $customer=$sale->customerRecord;
-$invoiceTitle='VAT INVOICE / فاتورة ضريبة القيمة المضافة';
+$invoiceTitle='VAT INVOICE / فاتورة ضريبية';
 $printedInvoiceNotes=mb_strlen((string)$sale->invoice_notes)>250 ? mb_substr((string)$sale->invoice_notes,0,247).'...' : ($sale->invoice_notes ?: '—');
 $contact=$sale->customer_contact_person ?: optional($customer)->contact_person;
 $phone=$sale->customer_phone ?: optional($customer)->phone;

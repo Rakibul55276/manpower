@@ -4,7 +4,7 @@
 @page{size:A4 portrait;margin-top:165px}
 </style></head><body>
 @php $ar=fn($text)=>\App\Modules\Invoicing\Services\InvoiceService::arabicPdf($text); @endphp
-<div class="invoice-title">VAT INVOICE <span>/ {{ $ar('فاتورة ضريبة القيمة المضافة') }}</span></div>
+<div class="invoice-title">VAT INVOICE <span>/ {{ $ar('فاتورة ضريبية') }}</span></div>
 @php
 $customerRecord=$sale->customerRecord;
 $customerContact=$sale->customer_contact_person ?: optional($customerRecord)->contact_person;
