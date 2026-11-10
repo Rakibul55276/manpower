@@ -25,9 +25,40 @@ use App\Modules\SafetyShop\Tax\TaxDefinition;
 use App\Modules\Zatca\Services\ZatcaIssuanceGate;
 use App\Modules\Zatca\Services\ZatcaQrService;
 use App\Modules\Zatca\Services\ZatcaLifecycleService;
+use Carbon\CarbonImmutable;
 class SaleController extends Controller
 {
-    public function index(Request $request) { $search=trim((string)$request->input('q'));$sales=Sale::whereHas('location',fn($q)=>$q->where('company_id',$request->user()->company_id))->when($search,fn($q)=>$q->where(function($query)use($search){$query->where('invoice_number','like','%'.$search.'%')->orWhere('customer_po_number','like','%'.$search.'%')->orWhere('customer','like','%'.$search.'%');}))->with(['location','creator'])->latest('id')->paginate($this->perPage())->withQueryString(); return view('safety-shop.sales.index',compact('sales','search')); }
+    public function index(Request $request)
+    {
+        $data=$request->validate([
+            'q'=>'nullable|string|max:150',
+            'period'=>'nullable|in:month,custom',
+            'month'=>'nullable|date_format:Y-m',
+            'from'=>'nullable|required_if:period,custom|date_format:Y-m-d',
+            'to'=>'nullable|required_if:period,custom|date_format:Y-m-d|after_or_equal:from',
+            'payment'=>'nullable|in:all,paid,partially_paid,unpaid',
+        ]);
+        $search=trim((string)($data['q']??''));
+        $period=$data['period']??'month';
+        if($period==='custom'){
+            $from=CarbonImmutable::createFromFormat('Y-m-d',$data['from'])->startOfDay();
+            $to=CarbonImmutable::createFromFormat('Y-m-d',$data['to'])->endOfDay();
+            $periodLabel=$from->format('d M Y').' – '.$to->format('d M Y');
+        }else{
+            $month=CarbonImmutable::createFromFormat('!Y-m',$data['month']??now()->format('Y-m'));
+            $from=$month->startOfMonth();$to=$month->endOfMonth();$periodLabel=$month->format('F Y');
+        }
+        $payment=$data['payment']??'all';
+        $query=Sale::whereHas('location',fn($q)=>$q->where('company_id',$request->user()->company_id))
+            ->whereBetween('created_at',[$from,$to])
+            ->when($search,fn($q)=>$q->where(function($searchQuery)use($search){$searchQuery->where('invoice_number','like','%'.$search.'%')->orWhere('customer_po_number','like','%'.$search.'%')->orWhere('customer','like','%'.$search.'%');}))
+            ->when($payment==='paid',fn($q)=>$q->whereColumn('paid_cents','>=','total_cents'))
+            ->when($payment==='partially_paid',fn($q)=>$q->where('paid_cents','>',0)->whereColumn('paid_cents','<','total_cents'))
+            ->when($payment==='unpaid',fn($q)=>$q->where('paid_cents','<=',0));
+        $summary=(clone $query)->where('status','finalized')->selectRaw('COUNT(*) invoice_count, COALESCE(SUM(total_cents),0) gross_cents, COALESCE(SUM(taxable_cents),0) revenue_cents, COALESCE(SUM(tax_cents),0) vat_cents, COALESCE(SUM(CASE WHEN paid_cents > total_cents THEN total_cents ELSE paid_cents END),0) collected_cents, COALESCE(SUM(CASE WHEN total_cents > paid_cents THEN total_cents-paid_cents ELSE 0 END),0) outstanding_cents')->first();
+        $sales=(clone $query)->with(['location','creator'])->latest('id')->paginate($this->perPage())->withQueryString();
+        return view('safety-shop.sales.index',compact('sales','search','period','periodLabel','from','to','payment','summary'));
+    }
     public function create(Request $request)
     {
         $companyId=$request->user()->company_id;$replacement=null;$initialCheckout=null;
