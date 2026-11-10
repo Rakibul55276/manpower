@@ -31,7 +31,7 @@
 <button class="btn secondary">Filter</button><a class="btn link" href="{{ route('safety-shop.products.index') }}">Clear</a>
 </form>
 <div class="card-head"><h2>Product directory</h2><span class="badge">Performance: {{ $periodLabel }}</span><span class="product-performance-note">Sales performance is net of customer returns.</span><div class="product-view-toggle" role="group" aria-label="Product display"><button id="products-list-view" class="product-view-button active" type="button" aria-pressed="true">☷ List</button><button id="products-grid-view" class="product-view-button" type="button" aria-pressed="false">▦ Grid</button></div>@if($showFinancial)<a class="btn secondary" href="{{ route('safety-shop.export',request()->query()) }}">Export stock CSV</a>@endif</div>
-<div id="products-list" class="table-wrap"><table><thead><tr><th>Product / SKU</th><th>Barcode</th><th>Category</th><th>Size / variant</th><th>Stock</th><th>Selling price (SAR)</th><th>Sales performance</th><th>Status</th></tr></thead><tbody>
+<div id="products-list" class="table-wrap"><table class="product-directory-table"><colgroup><col class="col-product"><col class="col-barcode"><col class="col-category"><col class="col-variant"><col class="col-stock"><col class="col-price"><col class="col-performance"><col class="col-status"></colgroup><thead><tr><th>Product / SKU</th><th>Barcode</th><th>Category</th><th>Size / variant</th><th>Stock</th><th>Selling price (SAR)</th><th>Sales performance</th><th>Status</th></tr></thead><tbody>
 @forelse($products as $product)
 @php
     $revenue = (int) $product->period_revenue_cents;
