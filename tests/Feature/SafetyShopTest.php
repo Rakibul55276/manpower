@@ -451,8 +451,10 @@ class SafetyShopTest extends TestCase
         $this->assertSame(2000,$report['summary']['net_revenue']);
         $this->assertSame(1000,$report['summary']['net_cogs']);
         $this->assertSame(1000,$report['summary']['gross_profit']);
+        $this->assertSame(600,$report['summary']['gross_vat']);
+        $this->assertSame(300,$report['summary']['vat_refunds']);
         $this->assertSame(300,$report['summary']['vat_collected']);
-        $this->get(route('safety-shop.reports.index'))->assertOk()->assertSee('Financial audit trail')->assertSee('Gross profit / loss');
+        $this->get(route('safety-shop.reports.index'))->assertOk()->assertSee('Financial audit trail')->assertSee('Gross profit / loss')->assertSee('Gross VAT collected');
         $this->get(route('dashboard',['month'=>now()->format('Y-m')]))->assertOk()->assertSee('Safety Shop summary')->assertSee('Gross revenue excl. VAT')->assertSee('Net revenue excl. VAT')->assertSee('Inventory value');
         $csv=$this->get(route('safety-shop.reports.financial.csv'))->assertOk();
         $this->assertStringContainsString('SALE-'.$sale->id,$csv->streamedContent());

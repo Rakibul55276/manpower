@@ -21,7 +21,8 @@
 <div class="stats">
 <div class="stat"><div class="label">Gross sales · SAR</div><div class="value">{{ \App\Services\Pay::money($summary['gross_sales']) }}</div><span class="sub">{{ number_format($summary['sales_count']) }} receipts</span></div>
 <div class="stat"><div class="label">Refunds · SAR</div><div class="value">{{ \App\Services\Pay::money($summary['refunds']) }}</div><span class="sub">{{ number_format($summary['return_count']) }} returns</span></div>
-<div class="stat"><div class="label">Net revenue excl. VAT · SAR</div><div class="value">{{ \App\Services\Pay::money($summary['net_revenue']) }}</div><span class="sub">VAT payable {{ \App\Services\Pay::money($summary['vat_collected']) }}</span></div>
+<div class="stat"><div class="label">Net revenue excl. VAT · SAR</div><div class="value">{{ \App\Services\Pay::money($summary['net_revenue']) }}</div><span class="sub">After discounts and customer returns</span></div>
+<div class="stat"><div class="label">Gross VAT collected · SAR</div><div class="value">{{ \App\Services\Pay::money($summary['gross_vat']) }}</div><span class="sub">Returned VAT {{ \App\Services\Pay::money($summary['vat_refunds']) }} · Net payable {{ \App\Services\Pay::money($summary['vat_collected']) }}</span></div>
 <div class="stat"><div class="label">Net cost of goods · SAR</div><div class="value">{{ \App\Services\Pay::money($summary['net_cogs']) }}</div><span class="sub">After returned stock cost</span></div>
 <div class="stat"><div class="label">Gross profit / loss · SAR</div><div class="value">{{ \App\Services\Pay::money($summary['gross_profit']) }}</div><span class="badge {{ $summary['gross_profit']>=0?'approved':'cancelled' }}">{{ $summary['gross_profit']>=0?'Profit':'Loss' }}</span></div>
 <div class="stat"><div class="label">Gross margin</div><div class="value">{{ number_format($summary['margin'],2) }}%</div><span class="sub">Discounts {{ \App\Services\Pay::money($summary['discounts']) }}</span></div>
