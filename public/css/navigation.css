@@ -11,6 +11,15 @@
     font-size: 19px;
 }
 
+/* One persistent application header across every module and page. */
+.topbar {
+    position: sticky;
+    top: 0;
+    z-index: 25;
+    width: 100%;
+    flex: 0 0 auto;
+}
+
 .menu-toggle:hover {
     background: #f0f6f3;
 }
