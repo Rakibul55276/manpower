@@ -11,13 +11,18 @@
 @php
     $showFinancial = auth()->user()->canApprove();
 @endphp
+<details class="products-collapsible products-summary-panel">
+<summary><span>Inventory summary</span></summary>
 <div class="stats">
 <div class="stat"><div class="label">Active products</div><div class="value">{{ $metrics['products'] }}</div></div>
 <div class="stat"><div class="label">Units on hand</div><div class="value">{{ number_format($metrics['units']) }}</div></div>
 @if($showFinancial)<div class="stat"><div class="label">Stock value at current cost · SAR</div><div class="value">{{ \App\Services\Pay::money($metrics['value']) }}</div></div>@endif
 <a class="stat stat-link" href="{{ route('safety-shop.index',['low'=>1]) }}"><div class="label">Products needing replenishment</div><div class="value">{{ $metrics['low'] }}</div></a>
 </div>
+</details>
 <div class="card">
+<details class="products-collapsible products-filter-panel" {{ request()->hasAny(['search','category','status','low','period','month','from','to','per_page']) ? 'open' : '' }}>
+<summary><span>Search &amp; filters</span></summary>
 <form class="filters" method="GET">
 <div class="field search"><label for="search">Search</label><input id="search" name="search" value="{{ request('search') }}" placeholder="Barcode, SKU, product or brand"></div>
 <div class="field"><label for="category">Category</label><select id="category" name="category"><option value="">All categories</option>@foreach($categories as $category)<option value="{{ $category->id }}" {{ request('category')==$category->id?'selected':'' }}>{{ $category->name }}</option>@endforeach</select></div>
@@ -30,6 +35,7 @@
 <div class="field"><label for="per_page">Rows per page</label><select id="per_page" name="per_page">@foreach(\App\Support\DirectoryPagination::options() as $size)<option value="{{ $size }}" {{ $products->perPage()===$size?'selected':'' }}>{{ $size }}</option>@endforeach</select></div>
 <button class="btn secondary">Filter</button><a class="btn link" href="{{ route('safety-shop.products.index') }}">Clear</a>
 </form>
+</details>
 <div class="card-head"><h2>Product directory</h2><span class="badge">Performance: {{ $periodLabel }}</span><span class="product-performance-note">Sales performance is net of customer returns.</span><div class="product-view-toggle" role="group" aria-label="Product display"><button id="products-list-view" class="product-view-button active" type="button" aria-pressed="true">☷ List</button><button id="products-grid-view" class="product-view-button" type="button" aria-pressed="false">▦ Grid</button></div>@if($showFinancial)<a class="btn secondary" href="{{ route('safety-shop.export',request()->query()) }}">Export stock CSV</a>@endif</div>
 <div id="products-list" class="table-wrap"><table class="product-directory-table"><colgroup><col class="col-product"><col class="col-barcode"><col class="col-category"><col class="col-variant"><col class="col-stock"><col class="col-price"><col class="col-performance"><col class="col-status"></colgroup><thead><tr><th>Product / SKU</th><th>Barcode</th><th>Category</th><th>Size / variant</th><th>Stock</th><th>Selling price (SAR)</th><th>Sales performance</th><th>Status</th></tr></thead><tbody>
 @forelse($products as $product)
