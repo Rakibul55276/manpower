@@ -53,6 +53,46 @@
     background: var(--app-table-scrollbar-thumb-hover);
 }
 
+.table-scroll-assist {
+    display: none;
+    grid-template-columns: 36px minmax(0, 1fr) 36px;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 9px;
+    border-top: 1px solid var(--app-table-border);
+    border-bottom: 1px solid var(--app-table-border);
+    background: #f8faf9;
+}
+
+.table-scroll-assist.is-visible { display: grid; }
+.table-scroll-assist button {
+    width: 36px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid #cdd9d6;
+    border-radius: 7px;
+    background: #fff;
+    color: #315b57;
+    font-size: 18px;
+    line-height: 1;
+}
+.table-scroll-assist button:hover { border-color: #087f74; color: #087f74; }
+.table-scroll-assist button:disabled { opacity: .35; }
+.table-scroll-proxy {
+    height: 16px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-color: var(--app-table-scrollbar-thumb) var(--app-table-scrollbar-track);
+}
+.table-scroll-proxy::-webkit-scrollbar { height: 13px; }
+.table-scroll-proxy::-webkit-scrollbar-track { background: var(--app-table-scrollbar-track); }
+.table-scroll-proxy::-webkit-scrollbar-thumb {
+    border: 2px solid var(--app-table-scrollbar-track);
+    border-radius: 999px;
+    background: var(--app-table-scrollbar-thumb);
+}
+.table-scroll-proxy-content { height: 1px; }
+
 .table-wrap > table:not(.receipt-pdf-table):not(.receipt-settlement) {
     width: 100%;
     min-width: var(--table-min-width, var(--app-table-min-width));
@@ -146,6 +186,8 @@ col.table-col-40 { width: 40%; }
 }
 
 @media print {
+    .table-scroll-assist { display: none !important; }
+
     .table-wrap > table:not(.receipt-pdf-table):not(.receipt-settlement) {
         min-width: 0;
         table-layout: fixed;
