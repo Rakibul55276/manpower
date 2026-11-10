@@ -33,7 +33,6 @@ class FinancialReport
         $summary=[
             'sales_count'=>(int)$saleTotals->count,'return_count'=>(int)$returnTotals->count,
             'gross_sales'=>(int)$saleTotals->gross,'discounts'=>(int)$saleTotals->discounts,
-            'gross_vat'=>(int)$saleTotals->tax,'vat_refunds'=>(int)$returnTotals->tax_refunds,
             'vat_collected'=>(int)$saleTotals->tax-(int)$returnTotals->tax_refunds,
             'refunds'=>(int)$returnTotals->refunds,'net_revenue'=>$netRevenue,'net_cogs'=>$netCogs,
             'gross_profit'=>$profit,'loss'=>max(0,-$profit),
