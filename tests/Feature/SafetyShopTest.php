@@ -217,7 +217,7 @@ class SafetyShopTest extends TestCase
         $this->assertMatchesRegularExpression('/^INV-\d{4}-\d{8}$/',$sale->invoice_number);
         $this->assertSame(1,$sale->invoice_sequence_number);
         $this->assertSame('standard',$sale->invoice_type);
-        $this->get(route('safety-shop.sales.show',$sale))->assertOk()->assertSee('TAX INVOICE / فاتورة ضريبية')->assertDontSee('SIMPLIFIED TAX INVOICE');
+        $this->get(route('safety-shop.sales.show',$sale))->assertOk()->assertSee('VAT INVOICE / فاتورة ضريبة القيمة المضافة')->assertDontSee('SIMPLIFIED TAX INVOICE');
         $this->assertStringContainsString($sale->invoice_number.'.pdf', $response->headers->get('Content-Disposition'));
         $pdf=new \setasign\Fpdi\Fpdi;
         $this->assertSame(1,$pdf->setSourceFile(\setasign\Fpdi\PdfParser\StreamReader::createByString($response->getContent())));
@@ -241,7 +241,7 @@ class SafetyShopTest extends TestCase
         $this->assertSame([1,2],$finalized->pluck('invoice_sequence_number')->all());
         $this->assertSame(['INV-0001-00000001','INV-0001-00000002'],$finalized->pluck('invoice_number')->all());
         $this->assertTrue($finalized->every(fn($sale)=>$sale->invoice_type==='simplified'));
-        $this->get(route('safety-shop.sales.show',$finalized->first()))->assertOk()->assertSee('SIMPLIFIED TAX INVOICE / فاتورة ضريبية مبسطة');
+        $this->get(route('safety-shop.sales.show',$finalized->first()))->assertOk()->assertSee('VAT INVOICE / فاتورة ضريبة القيمة المضافة')->assertDontSee('SIMPLIFIED TAX INVOICE');
     }
     public function test_phase_one_blocks_final_invoice_when_legal_seller_identity_is_incomplete_but_allows_draft()
     {
