@@ -159,8 +159,8 @@ class ProductController extends Controller
     {
         $this->authorizeCompany($product);
         abort_unless(auth()->user()->isCompanyAdmin(), 403);
-        if ($this->isUsedInTransactions($product)) {
-            return back()->withErrors(['delete' => 'This product is used in transaction data. Delete its related sales, stock movements, quotations, and delivery-note transactions first, or set the product inactive to preserve the audit trail.']);
+        if ($reason = $this->deletionBlockReason($product)) {
+            return back()->withErrors(['delete' => 'This product cannot be deleted because it '.$reason.'. First make it inactive, ensure every location has zero stock, and preserve products with transaction history for audit purposes.']);
         }
         $imagePath=$product->image_path;
         DB::transaction(function () use ($product) {
@@ -193,8 +193,8 @@ class ProductController extends Controller
                 ->get();
 
             foreach ($products as $product) {
-                if ($this->isUsedInTransactions($product)) {
-                    $skipped[] = $product->sku;
+                if ($reason = $this->deletionBlockReason($product)) {
+                    $skipped[] = $product->sku.' ('.$reason.')';
                     continue;
                 }
 
@@ -211,17 +211,21 @@ class ProductController extends Controller
         $redirect = redirect()->route('safety-shop.products.index');
         if ($deleted > 0) $redirect->with('success', $deleted.' unused '.($deleted === 1 ? 'product' : 'products').' deleted.');
         if ($skipped) {
-            $redirect->withErrors(['delete' => count($skipped).' selected '.(count($skipped) === 1 ? 'product was' : 'products were').' skipped because transaction or stock history exists: '.implode(', ', $skipped).'. Set '.(count($skipped) === 1 ? 'it' : 'them').' inactive to preserve the audit trail.']);
+            $redirect->withErrors(['delete' => count($skipped).' selected '.(count($skipped) === 1 ? 'product was' : 'products were').' skipped: '.implode(', ', $skipped).'. Only inactive products with zero stock at every location and no transaction history can be deleted.']);
         }
         return $redirect;
     }
 
-    private function isUsedInTransactions(Product $product): bool
+    private function deletionBlockReason(Product $product): ?string
     {
-        return $product->movements()->exists()
-            || $product->stocks()->where('quantity', '<>', 0)->exists()
+        if ($product->is_active) return 'is still active';
+        if ($product->stocks()->where('quantity', '<>', 0)->exists()) return 'has non-zero stock at one or more locations';
+        if ($product->movements()->exists()
             || DB::table('safety_shop_sale_lines')->where('product_id', $product->id)->exists()
-            || DB::table('commercial_document_lines')->where('product_id', $product->id)->exists();
+            || DB::table('commercial_document_lines')->where('product_id', $product->id)->exists()) {
+            return 'has transaction history';
+        }
+        return null;
     }
 
     private function authorizeCompany(Product $product): void { abort_unless((int)$product->company_id===(int)auth()->user()->company_id,404); }

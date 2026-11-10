@@ -7,7 +7,7 @@
 @if(auth()->user()->isCompanyAdmin())<a class="btn secondary" href="{{ route('safety-shop.products.edit',$product) }}">Edit product</a>@endif
 @if(auth()->user()->canApprove())<a class="btn secondary" href="{{ route('safety-shop.products.barcode-label',$product) }}">Print barcode label</a>@endif
 @if($product->is_active && auth()->user()->canManageSafetyShopStock())<a class="btn" href="{{ route('safety-shop.stock.create',['product_id'=>$product->id]) }}">+ Stock movement</a>@endif
-@if(auth()->user()->isCompanyAdmin())<form method="POST" action="{{ route('safety-shop.products.destroy',$product) }}" onsubmit="return confirm('Delete this unused product? If it is used in a transaction, you must delete the related transaction data first.')">@csrf @method('DELETE')<button class="btn danger" type="submit">Delete product</button></form>@endif
+@if(auth()->user()->isCompanyAdmin() && !$product->is_active && $product->stocks->every(fn($stock)=>(int)$stock->quantity===0))<form method="POST" action="{{ route('safety-shop.products.destroy',$product) }}" onsubmit="return confirm('Permanently delete this inactive zero-stock product? Products with transaction history will still be protected.')">@csrf @method('DELETE')<button class="btn danger" type="submit">Delete product</button></form>@endif
 @endsection
 @section('content')
 @include('safety-shop.shared.nav')

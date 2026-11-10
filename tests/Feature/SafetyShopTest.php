@@ -527,7 +527,7 @@ class SafetyShopTest extends TestCase
     {
         $companyAdmin=User::create(['name'=>'Catalog Admin','username'=>'catalog_admin','email'=>'catalog_admin@test.local','password'=>Hash::make('Strong-password-123'),'role'=>'admin','company_id'=>$this->company->id,'is_active'=>true]);
         $unusedCategory=Master::create(['company_id'=>$this->company->id,'type'=>'category','name'=>'Unused category','sku_prefix'=>'UNUSED','is_active'=>true]);
-        $unusedProduct=Product::create(['company_id'=>$this->company->id,'sku'=>'UNUSED-0001','name'=>'Unused test item','unit'=>'piece','cost_cents'=>100,'price_cents'=>200,'reorder_level'=>0]);
+        $unusedProduct=Product::create(['company_id'=>$this->company->id,'sku'=>'UNUSED-0001','name'=>'Unused test item','unit'=>'piece','cost_cents'=>100,'price_cents'=>200,'reorder_level'=>0,'is_active'=>false]);
 
         $this->login($this->manager)->delete(route('safety-shop.products.destroy',$unusedProduct))->assertForbidden();
         $this->login($companyAdmin)->delete(route('safety-shop.products.destroy',$unusedProduct))->assertRedirect(route('safety-shop.products.index'));
@@ -543,8 +543,8 @@ class SafetyShopTest extends TestCase
     public function test_company_admin_can_bulk_delete_unused_products_and_used_products_are_skipped()
     {
         $companyAdmin=User::create(['name'=>'Bulk Catalog Admin','username'=>'bulk_catalog_admin','email'=>'bulk_catalog_admin@test.local','password'=>Hash::make('Strong-password-123'),'role'=>'admin','company_id'=>$this->company->id,'is_active'=>true]);
-        $unusedA=Product::create(['company_id'=>$this->company->id,'sku'=>'BULK-0001','name'=>'Bulk unused A','unit'=>'piece','cost_cents'=>100,'price_cents'=>200,'reorder_level'=>0]);
-        $unusedB=Product::create(['company_id'=>$this->company->id,'sku'=>'BULK-0002','name'=>'Bulk unused B','unit'=>'piece','cost_cents'=>100,'price_cents'=>200,'reorder_level'=>0]);
+        $unusedA=Product::create(['company_id'=>$this->company->id,'sku'=>'BULK-0001','name'=>'Bulk unused A','unit'=>'piece','cost_cents'=>100,'price_cents'=>200,'reorder_level'=>0,'is_active'=>false]);
+        $unusedB=Product::create(['company_id'=>$this->company->id,'sku'=>'BULK-0002','name'=>'Bulk unused B','unit'=>'piece','cost_cents'=>100,'price_cents'=>200,'reorder_level'=>0,'is_active'=>false]);
 
         $this->login($this->manager)->delete(route('safety-shop.products.bulk-destroy'),['products'=>[$unusedA->id,$unusedB->id]])->assertForbidden();
         $this->login($companyAdmin)->get(route('safety-shop.products.index'))->assertOk()->assertSee('bulk-product-delete-form')->assertSee('Delete selected');
@@ -552,9 +552,9 @@ class SafetyShopTest extends TestCase
         $this->assertDatabaseMissing('safety_shop_products',['id'=>$unusedA->id]);
         $this->assertDatabaseMissing('safety_shop_products',['id'=>$unusedB->id]);
 
-        $protected=Product::create(['company_id'=>$this->company->id,'sku'=>'BULK-0003','name'=>'Bulk protected','unit'=>'piece','cost_cents'=>100,'price_cents'=>200,'reorder_level'=>0]);
+        $protected=Product::create(['company_id'=>$this->company->id,'sku'=>'BULK-0003','name'=>'Bulk protected','unit'=>'piece','cost_cents'=>100,'price_cents'=>200,'reorder_level'=>0,'is_active'=>false]);
         Stock::create(['product_id'=>$protected->id,'location_id'=>$this->location->id,'quantity'=>1]);
-        $unusedC=Product::create(['company_id'=>$this->company->id,'sku'=>'BULK-0004','name'=>'Bulk unused C','unit'=>'piece','cost_cents'=>100,'price_cents'=>200,'reorder_level'=>0]);
+        $unusedC=Product::create(['company_id'=>$this->company->id,'sku'=>'BULK-0004','name'=>'Bulk unused C','unit'=>'piece','cost_cents'=>100,'price_cents'=>200,'reorder_level'=>0,'is_active'=>false]);
         $this->delete(route('safety-shop.products.bulk-destroy'),['products'=>[$protected->id,$unusedC->id]])->assertRedirect(route('safety-shop.products.index'))->assertSessionHasErrors('delete');
         $this->assertDatabaseHas('safety_shop_products',['id'=>$protected->id]);
         $this->assertDatabaseMissing('safety_shop_products',['id'=>$unusedC->id]);
