@@ -177,7 +177,7 @@ class ProductController extends Controller
         abort_unless($request->user()->isCompanyAdmin(), 403);
         $companyId = (int) $request->user()->company_id;
         $data = $request->validate([
-            'products' => ['required', 'array', 'min:2', 'max:100'],
+            'products' => ['required', 'array', 'min:1', 'max:100'],
             'products.*' => ['required', 'integer', 'distinct', Rule::exists('safety_shop_products', 'id')->where(fn ($query) => $query->where('company_id', $companyId))],
         ]);
 

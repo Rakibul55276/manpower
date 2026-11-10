@@ -552,6 +552,10 @@ class SafetyShopTest extends TestCase
         $this->assertDatabaseMissing('safety_shop_products',['id'=>$unusedA->id]);
         $this->assertDatabaseMissing('safety_shop_products',['id'=>$unusedB->id]);
 
+        $single=Product::create(['company_id'=>$this->company->id,'sku'=>'BULK-SINGLE-0001','name'=>'Single bulk delete','unit'=>'piece','cost_cents'=>100,'price_cents'=>200,'reorder_level'=>0,'is_active'=>false]);
+        $this->delete(route('safety-shop.products.bulk-destroy'),['products'=>[$single->id]])->assertRedirect(route('safety-shop.products.index'))->assertSessionHas('success');
+        $this->assertDatabaseMissing('safety_shop_products',['id'=>$single->id]);
+
         $protected=Product::create(['company_id'=>$this->company->id,'sku'=>'BULK-0003','name'=>'Bulk protected','unit'=>'piece','cost_cents'=>100,'price_cents'=>200,'reorder_level'=>0,'is_active'=>false]);
         Stock::create(['product_id'=>$protected->id,'location_id'=>$this->location->id,'quantity'=>1]);
         $unusedC=Product::create(['company_id'=>$this->company->id,'sku'=>'BULK-0004','name'=>'Bulk unused C','unit'=>'piece','cost_cents'=>100,'price_cents'=>200,'reorder_level'=>0,'is_active'=>false]);
