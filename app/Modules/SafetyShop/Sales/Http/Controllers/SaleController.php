@@ -43,6 +43,7 @@ class SaleController extends Controller
         if($period==='custom'){
             $from=CarbonImmutable::createFromFormat('Y-m-d',$data['from'])->startOfDay();
             $to=CarbonImmutable::createFromFormat('Y-m-d',$data['to'])->endOfDay();
+            if($from->diffInDays($to)>731) throw ValidationException::withMessages(['to'=>'The invoice reporting duration cannot exceed two years.']);
             $periodLabel=$from->format('d M Y').' – '.$to->format('d M Y');
         }else{
             $month=CarbonImmutable::createFromFormat('!Y-m',$data['month']??now()->format('Y-m'));

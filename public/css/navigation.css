@@ -221,6 +221,14 @@ html {
 }
 
 @media (max-width: 760px) {
+    .sidebar {
+        width: min(86vw, 280px);
+    }
+
+    .app-shell {
+        margin-left: 0;
+    }
+
     .menu-toggle {
         border: 0;
         font-size: 22px;

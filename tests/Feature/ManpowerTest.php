@@ -19,6 +19,7 @@ class ManpowerTest extends TestCase
 {
     use RefreshDatabase;
     private $admin;
+    private $owner;
     private $manager;
     private $approver;
     private $company;
@@ -28,24 +29,30 @@ class ManpowerTest extends TestCase
     public function actingAs(\Illuminate\Contracts\Auth\Authenticatable $user, $guard = null)
     {
         // Simulate a fresh sign-in when switching roles within one test client.
-        $this->withSession(['password_hash_'.($guard ?? 'web') => $user->getAuthPassword()]);
+        $session=['password_hash_'.($guard ?? 'web') => $user->getAuthPassword()];
+        if(!$user->isSuperAdmin()) $session['active_module']='manpower';
+        $this->withSession($session);
         return parent::actingAs($user, $guard);
     }
     protected function setUp(): void
     {
         parent::setUp();
         Storage::fake('local');
-        $this->admin = User::create(['name' => 'Test Admin', 'username' => 'admin', 'email' => 'admin@test.local', 'password' => Hash::make('A-secure-password'), 'role' => 'super_admin', 'is_active' => true]);
-        $this->manager = User::create(['name' => 'Test Manager', 'username' => 'manager', 'email' => 'manager@test.local', 'password' => Hash::make('A-secure-password'), 'role' => 'manager', 'is_active' => true]);
-        $this->approver = User::create(['name' => 'Test Approver', 'username' => 'approver', 'email' => 'approver@test.local', 'password' => Hash::make('A-secure-password'), 'role' => 'admin', 'is_active' => true]);
-        $this->company = Company::create(['name' => 'Assigned Alpha']);
+        $this->company = Company::create(['name' => 'Assigned Alpha','company_code'=>'TEST001','location'=>'Riyadh','is_active'=>true]);
         $this->branch = Branch::create(['company_id'=>$this->company->id,'name'=>'Main','code'=>'MAIN','location'=>'Riyadh','is_active'=>true]);
+        $this->owner = User::create(['name' => 'System Owner', 'username' => 'system_owner', 'email' => 'owner@test.local', 'password' => Hash::make('A-secure-password'), 'role' => 'super_admin', 'is_active' => true]);
+        $this->admin = User::create(['name' => 'Test Admin', 'username' => 'admin', 'email' => 'admin@test.local', 'password' => Hash::make('A-secure-password'), 'role' => 'admin', 'company_id'=>$this->company->id, 'is_active' => true]);
+        $this->manager = User::create(['name' => 'Test Manager', 'username' => 'manager', 'email' => 'manager@test.local', 'password' => Hash::make('A-secure-password'), 'role' => 'manager', 'company_id'=>$this->company->id, 'is_active' => true]);
+        $this->approver = User::create(['name' => 'Test Approver', 'username' => 'approver', 'email' => 'approver@test.local', 'password' => Hash::make('A-secure-password'), 'role' => 'admin', 'company_id'=>$this->company->id, 'is_active' => true]);
         $second = Company::create(['name' => 'Assigned Beta']);
         $this->other = Company::create(['name' => 'Restricted Company']);
         $this->manager->companies()->attach([$this->company->id, $second->id]);
         $this->manager->update(['company_id'=>$this->company->id,'branch_id'=>$this->branch->id]);
-        $this->approver->update(['company_id'=>$this->company->id]);
-        $this->designation = Designation::create(['name' => 'Electrician']);
+        $this->designation = Designation::create([
+            'company_id' => $this->company->id,
+            'name' => 'Electrician',
+            'is_active' => true,
+        ]);
     }
     private function employee($overrides = [])
     {
@@ -64,6 +71,26 @@ class ManpowerTest extends TestCase
     {
         return $this->actingAs($this->admin)->post(route($prefix.'.store'), array_merge(['employee_id' => $employee->id, 'month' => now()->format('Y-m'), 'allowance' => '1.00', 'deduction' => '0.50'], $overrides));
     }
+    private function mockTenantProvisioning(): void
+    {
+        $tenant=$this->mock(\App\Services\TenantDatabase::class);
+        $tenant->shouldReceive('verify')->zeroOrMoreTimes()->andReturnNull();
+        $tenant->shouldReceive('encryptedPassword')->zeroOrMoreTimes()->andReturn('encrypted-test-password');
+        $tenant->shouldReceive('decryptedPassword')->zeroOrMoreTimes()->andReturn('TenantPassword1!');
+        $tenant->shouldReceive('provision')->zeroOrMoreTimes()->andReturnNull();
+        $tenant->shouldReceive('activate')->zeroOrMoreTimes()->andReturnNull();
+        $tenant->shouldReceive('deactivate')->zeroOrMoreTimes()->andReturnNull();
+    }
+    private function companyPayload(string $name, array $overrides=[]): array
+    {
+        return array_merge([
+            'name'=>$name,'company_code'=>strtoupper(substr(preg_replace('/[^A-Za-z0-9]/','',$name),0,12)),
+            'location'=>'Riyadh, Saudi Arabia','db_host'=>'localhost','db_port'=>3306,
+            'db_name'=>'tenant_test','db_username'=>'tenant_user','db_password'=>'TenantPassword1!',
+            'admin_name'=>'Tenant Admin','admin_username'=>'tenantadmin','admin_email'=>'tenant-admin@example.test',
+            'admin_password'=>'StrongTenant1!','admin_password_confirmation'=>'StrongTenant1!',
+        ],$overrides);
+    }
     public function test_manpower_has_an_isolated_url_space_with_legacy_redirects()
     {
         config(['manpower.enabled'=>true, 'safety_shop.enabled'=>true]);
@@ -76,9 +103,12 @@ class ManpowerTest extends TestCase
     }
     public function test_login_and_disabled_accounts()
     {
+        $tenant=$this->mock(\App\Services\TenantDatabase::class);
+        $tenant->shouldReceive('activate')->andReturnNull();
+        $tenant->shouldReceive('deactivate')->zeroOrMoreTimes()->andReturnNull();
         $this->get(route('login'))->assertOk();
-        $this->post(route('login.submit'), ['username' => $this->manager->username, 'password' => 'wrong'])->assertSessionHasErrors('username');
-        $this->post(route('login.submit'), ['username' => $this->manager->username, 'password' => 'A-secure-password'])->assertRedirect(route('manpower.index'));
+        $this->post(route('manpower.login.submit'), ['company_code'=>$this->company->company_code,'username' => $this->manager->username, 'password' => 'wrong'])->assertSessionHasErrors('username');
+        $this->post(route('manpower.login.submit'), ['company_code'=>$this->company->company_code,'username' => $this->manager->username, 'password' => 'A-secure-password'])->assertRedirect(route('manpower.index'));
         $this->assertAuthenticatedAs($this->manager);
         $this->manager->update(['is_active' => false]);
         $this->actingAs($this->manager->fresh());
@@ -88,15 +118,18 @@ class ManpowerTest extends TestCase
 
     public function test_company_admin_login_redirects_to_dashboard_instead_of_super_admin_shop_home()
     {
-        $this->post(route('login.submit'), ['username'=>$this->approver->username,'password'=>'A-secure-password'])
+        $tenant=$this->mock(\App\Services\TenantDatabase::class);
+        $tenant->shouldReceive('activate')->andReturnNull();
+        $tenant->shouldReceive('deactivate')->zeroOrMoreTimes()->andReturnNull();
+        $this->post(route('manpower.login.submit'), ['company_code'=>$this->company->company_code,'username'=>$this->approver->username,'password'=>'A-secure-password'])
             ->assertRedirect(route('manpower.index'));
         $this->assertAuthenticatedAs($this->approver);
-        $this->get(route('dashboard'))->assertOk();
+        $this->get(route('dashboard'))->assertRedirect(route('manpower.index'));
     }
 
     public function test_every_successful_transaction_has_an_activity_trail()
     {
-        $this->actingAs($this->manager)->post(route('logout'))->assertRedirect(route('login'));
+        $this->actingAs($this->manager)->post(route('logout'))->assertRedirect(route('manpower.login'));
         $this->assertDatabaseHas('activity_logs', [
             'user_id' => $this->manager->id,
             'action' => 'Logout',
@@ -105,15 +138,16 @@ class ManpowerTest extends TestCase
     }
     public function test_create_update_and_delete_are_attributed_to_the_acting_user()
     {
-        $this->actingAs($this->admin)->post(route('companies.store'), ['name' => 'Audit Trail Company', 'location' => 'Riyadh, Saudi Arabia'])->assertSessionHasNoErrors();
+        $this->mockTenantProvisioning();
+        $this->actingAs($this->owner)->post(route('companies.store'), $this->companyPayload('Audit Trail Company'))->assertSessionHasNoErrors();
         $company = Company::where('name', 'Audit Trail Company')->firstOrFail();
 
-        $this->put(route('companies.update', $company), ['name' => 'Audited Company', 'location' => 'Riyadh, Saudi Arabia', 'is_active' => 1])->assertSessionHasNoErrors();
+        $this->put(route('companies.update', $company), $this->companyPayload('Audited Company',['company_code'=>$company->company_code,'db_password'=>null,'admin_name'=>null,'admin_username'=>null,'admin_email'=>null,'admin_password'=>null,'admin_password_confirmation'=>null,'is_active'=>1]))->assertSessionHasNoErrors();
         $this->delete(route('companies.destroy', $company))->assertSessionHasNoErrors();
 
         foreach (['Created companies', 'Updated companies', 'Deleted companies'] as $action) {
             $this->assertDatabaseHas('activity_logs', [
-                'user_id' => $this->admin->id,
+                'user_id' => $this->owner->id,
                 'action' => $action,
                 'subject' => $action === 'Created companies' ? 'Audit Trail Company' : 'Audited Company',
             ]);
@@ -121,8 +155,9 @@ class ManpowerTest extends TestCase
     }
     public function test_company_master_requires_location_and_stores_optional_details()
     {
-        $this->actingAs($this->admin)->post(route('companies.store'), ['name' => 'Missing Location'])->assertSessionHasErrors('location');
-        $this->post(route('companies.store'), [
+        $this->mockTenantProvisioning();
+        $this->actingAs($this->owner)->post(route('companies.store'), $this->companyPayload('Missing Location',['location'=>null]))->assertSessionHasErrors('location');
+        $this->post(route('companies.store'), $this->companyPayload('Complete Company',[
             'name' => 'Complete Company',
             'location' => 'Dammam, Saudi Arabia',
             'registration_number' => 'CR-100200',
@@ -131,7 +166,7 @@ class ManpowerTest extends TestCase
             'email' => 'operations@example.test',
             'address' => 'Industrial Area, Dammam',
             'notes' => 'Preferred workforce customer.',
-        ])->assertSessionHasNoErrors();
+        ]))->assertSessionHasNoErrors();
 
         $this->assertDatabaseHas('companies', [
             'name' => 'Complete Company',
@@ -196,7 +231,7 @@ class ManpowerTest extends TestCase
             ->assertSee('Directory Worker')
             ->assertSee($entry->work_date->format('d M Y'));
     }
-    public function test_company_admin_can_edit_and_delete_pending_hours_but_only_super_admin_can_reopen()
+    public function test_company_admin_can_edit_delete_and_reopen_hours_while_manager_cannot_reopen()
     {
         $employee = $this->employee(); $entry = $this->entry($employee, ['status' => 'pending']);
         $this->actingAs($this->approver)->get(route('timesheets.edit', $entry))->assertOk();
@@ -205,11 +240,26 @@ class ManpowerTest extends TestCase
         $deletable=$this->entry($employee,['status'=>'pending','work_date'=>now()->subDay()->format('Y-m-d')]);
         $this->delete(route('timesheets.destroy', $deletable))->assertRedirect();
         $this->assertDatabaseMissing('timesheets',['id'=>$deletable->id]);
-        $this->delete(route('employees.destroy', $employee))->assertForbidden();
+        $this->delete(route('employees.destroy', $employee))->assertSessionHasNoErrors();
+        $this->assertSame('inactive',$employee->fresh()->status);
         $this->delete(route('companies.destroy', $this->other))->assertForbidden();
         $this->post(route('timesheets.review', $entry), ['status' => 'approved'])->assertSessionHasNoErrors();
-        $this->post(route('timesheets.review', $entry), ['status' => 'pending', 'review_note' => 'Correction'])->assertForbidden();
+        $this->actingAs($this->manager)->post(route('timesheets.review', $entry), ['status' => 'pending', 'review_note' => 'Correction'])->assertForbidden();
         $this->actingAs($this->admin)->post(route('timesheets.review', $entry), ['status' => 'pending', 'review_note' => 'Correction'])->assertSessionHasNoErrors();
+    }
+
+    public function test_approved_timesheet_cannot_be_edited_without_reopening_it(): void
+    {
+        $employee=$this->employee();
+        $entry=$this->entry($employee,['status'=>'approved']);
+
+        $this->actingAs($this->admin)->get(route('timesheets.edit',$entry))->assertForbidden();
+        $this->put(route('timesheets.update',$entry),$this->payload([
+            'employee_id'=>$employee->id,
+            'work_date'=>$entry->work_date->format('Y-m-d'),
+            'regular_hours'=>8,
+            'overtime_hours'=>0,
+        ]))->assertForbidden();
     }
     public function test_employee_timesheet_pdf_supports_multiple_months_and_orientation()
     {
@@ -271,10 +321,13 @@ class ManpowerTest extends TestCase
     {
         foreach ([$this->admin, $this->manager] as $user) {
             $this->actingAs($user);
-            foreach (['dashboard', 'employees.index', 'employees.create', 'own-employees.index', 'own-employees.create', 'timesheets.index', 'timesheets.create', 'attendance.index', 'attendance.create', 'payrolls.index', 'salaries.index', 'companies.index', 'designations.index', 'profile'] as $route) { $this->get(route($route))->assertOk(); }
+            foreach (['employees.index', 'employees.create', 'own-employees.index', 'own-employees.create', 'timesheets.index', 'timesheets.create', 'attendance.index', 'attendance.create', 'payrolls.index', 'salaries.index', 'profile'] as $route) { $this->get(route($route))->assertOk(); }
+            $this->get(route('dashboard'))->assertRedirect(route('manpower.index'));
         }
+        $this->actingAs($this->admin)->get(route('designations.index'))->assertOk();
+        $this->actingAs($this->owner);
+        foreach (['users.index', 'users.create', 'companies.index'] as $route) { $this->get(route($route))->assertOk(); }
         $this->actingAs($this->admin);
-        foreach (['users.index', 'users.create', 'audit.index'] as $route) { $this->get(route($route))->assertOk(); }
         $this->get(route('audit.csv'))->assertOk()->assertHeader('content-type', 'text/csv; charset=UTF-8');
         $this->get(route('audit.pdf'))->assertOk()->assertHeader('content-type', 'application/pdf');
         foreach (['employees', 'timesheets', 'salaries'] as $report) {
@@ -283,12 +336,12 @@ class ManpowerTest extends TestCase
             $this->get(route('audit.pdf', ['report' => $report]))->assertOk()->assertHeader('content-type', 'application/pdf');
         }
     }
-    public function test_manager_has_multiple_companies_but_cannot_access_others()
+    public function test_manager_is_limited_to_assigned_branch_and_cannot_access_other_companies()
     {
         $visible = $this->employee(['name' => 'Visible Alpha Worker']);
         $second = $this->employee(['name' => 'Visible Beta Worker', 'company_id' => $this->manager->companies()->where('name', 'Assigned Beta')->first()->id]);
         $hidden = $this->employee(['name' => 'Hidden Worker', 'company_id' => $this->other->id]);
-        $this->actingAs($this->manager)->get(route('employees.index'))->assertSee($visible->name)->assertSee($second->name)->assertDontSee($hidden->name);
+        $this->actingAs($this->manager)->get(route('employees.index'))->assertSee($visible->name)->assertDontSee($second->name)->assertDontSee($hidden->name);
         foreach (['employees.show', 'employees.edit', 'employees.photo', 'employees.cv'] as $route) { $this->get(route($route, $hidden))->assertForbidden(); }
         $this->put(route('employees.update', $hidden), $this->payload())->assertForbidden();
         $this->delete(route('employees.destroy', $hidden))->assertForbidden();
@@ -334,14 +387,14 @@ class ManpowerTest extends TestCase
         $entry = Timesheet::firstOrFail(); $this->assertEquals('pending', $entry->status); $this->assertEquals(800, $entry->regular_units); $this->assertEquals(175, $entry->overtime_units);
         $this->get(route('timesheets.edit', $entry))->assertForbidden();
         $this->post(route('timesheets.store'), $payload)->assertStatus(302)->assertSessionHasErrors('work_date');
-        $this->post(route('timesheets.review', $entry), ['status' => 'approved'])->assertForbidden();
-        $this->actingAs($this->admin)->post(route('timesheets.review', $entry), ['status' => 'approved'])->assertSessionHasNoErrors();
+        $this->post(route('timesheets.review', $entry), ['status' => 'approved'])->assertSessionHasNoErrors();
         $this->assertEquals('approved', $entry->fresh()->status);
         $this->actingAs($this->manager)->put(route('timesheets.update', $entry), $payload)->assertForbidden();
+        $this->post(route('timesheets.review', $entry), ['status' => 'pending', 'review_note' => 'Correct daily hours'])->assertForbidden();
         $this->actingAs($this->admin)->post(route('timesheets.review', $entry), ['status' => 'pending', 'review_note' => 'Correct daily hours'])->assertSessionHasNoErrors();
         $this->assertEquals('pending', $entry->fresh()->status);
     }
-    public function test_company_admin_can_correct_only_short_unlocked_hours()
+    public function test_company_admin_can_correct_pending_unlocked_hours()
     {
         $employee = $this->employee(['regular_hours_units'=>800]);
         $short = $this->entry($employee, ['regular_units'=>600,'overtime_units'=>0,'status'=>'pending']);
@@ -350,7 +403,7 @@ class ManpowerTest extends TestCase
         $this->put(route('timesheets.update',$short),$payload)->assertSessionHasNoErrors();
         $this->assertSame(750,(int)$short->fresh()->regular_units);
         $full = $this->entry($employee, ['work_date'=>now()->subDay(),'regular_units'=>800,'status'=>'pending']);
-        $this->get(route('timesheets.edit',$full))->assertForbidden();
+        $this->get(route('timesheets.edit',$full))->assertOk();
     }
     public function test_zero_hours_can_be_recorded_as_an_absence()
     {
@@ -427,7 +480,7 @@ class ManpowerTest extends TestCase
         $this->post(route('salaries.approve', $payroll))->assertSessionHasNoErrors();
         $pdfResponse = $this->get(route('salaries.pdf', $payroll))->assertOk()->assertHeader('Content-Type', 'application/pdf');
         $pdf = new Fpdi; $this->assertSame(1, $pdf->setSourceFile(StreamReader::createByString($pdfResponse->getContent())));
-        $template = $pdf->importPage(1); $size = $pdf->getTemplateSize($template); $this->assertSame('L', $size['orientation']);
+        $template = $pdf->importPage(1); $size = $pdf->getTemplateSize($template); $this->assertSame('P', $size['orientation']);
         if (!is_dir(base_path('tmp/pdfs'))) { mkdir(base_path('tmp/pdfs'), 0755, true); }
         file_put_contents(base_path('tmp/pdfs/own-employee-payslip-qa.pdf'), $pdfResponse->getContent());
     }
@@ -440,8 +493,15 @@ class ManpowerTest extends TestCase
         $this->generate($employee); $payroll = Payroll::firstOrFail();
         $this->actingAs($this->approver)->post(route('payrolls.approve', $payroll))->assertSessionHasNoErrors();
         $this->actingAs($this->admin)->post(route('payrolls.paid', $payroll))->assertSessionHasNoErrors();
-        $this->put(route('payrolls.update', $payroll), ['allowance' => 0, 'deduction' => 0])->assertForbidden();
-        $this->delete(route('payrolls.destroy', $payroll))->assertForbidden();
+        $this->put(route('payrolls.update', $payroll), ['allowance' => 0, 'deduction' => 0])->assertSessionHasNoErrors();
+        $this->assertSame('pending',$payroll->fresh()->status);
+        $this->post(route('payrolls.approve', $payroll))->assertSessionHasNoErrors();
+        $this->post(route('payrolls.paid', $payroll))->assertSessionHasNoErrors();
+        $this->delete(route('payrolls.destroy', $payroll))->assertSessionHasNoErrors();
+        $this->assertDatabaseMissing('payrolls',['id'=>$payroll->id]);
+        $this->generate($employee); $payroll=Payroll::firstOrFail();
+        $this->post(route('payrolls.approve', $payroll))->assertSessionHasNoErrors();
+        $this->post(route('payrolls.paid', $payroll))->assertSessionHasNoErrors();
         $this->post(route('payrolls.paid', $payroll))->assertForbidden();
     }
     public function test_admin_bulk_approves_both_salary_types_and_pending_slips_cannot_print()
@@ -456,35 +516,38 @@ class ManpowerTest extends TestCase
 
         $own = $this->employee(['name' => 'Bulk Own Worker', 'employment_type' => 'own', 'salary_type' => 'monthly', 'monthly_salary_cents' => 500000]);
         $this->generate($own, 'salaries'); $ownPayroll = Payroll::where('employee_id', $own->id)->firstOrFail();
-        $this->actingAs($this->manager)->post(route('salaries.bulk.approve'), ['payroll_ids' => [$ownPayroll->id]])->assertForbidden();
-        $this->actingAs($this->admin)->post(route('salaries.bulk.approve'), ['payroll_ids' => [$ownPayroll->id]])->assertSessionHasNoErrors();
+        $this->actingAs($this->manager)->post(route('salaries.bulk.approve'), ['payroll_ids' => [$ownPayroll->id]])->assertSessionHasNoErrors();
         $this->assertSame('approved', $ownPayroll->fresh()->status);
         $this->get(route('salaries.pdf', $ownPayroll))->assertOk()->assertHeader('Content-Type', 'application/pdf');
     }
     public function test_payroll_details_pdf_and_csv_are_scoped_to_company()
     {
-        $employee = $this->employee(['name' => 'Restricted Salary Person', 'company_id' => $this->other->id]); $this->entry($employee); $this->generate($employee); $payroll = Payroll::firstOrFail();
+        $employee = $this->employee(['name' => 'Restricted Salary Person', 'company_id' => $this->other->id]);
+        $payroll=Payroll::create(['employee_id'=>$employee->id,'company_id'=>$employee->company_id,'branch_id'=>$employee->branch_id,'month'=>now()->format('Y-m'),'salary_type'=>'hourly','employment_type'=>'rental','employee_name'=>$employee->name,'company_name'=>$this->other->name,'designation_name'=>'Electrician','iqama_number'=>$employee->iqama_number,'regular_units'=>800,'overtime_units'=>0,'regular_pay_cents'=>10000,'overtime_pay_cents'=>0,'net_pay_cents'=>10000,'status'=>'approved','created_by'=>$this->admin->id]);
         $this->actingAs($this->manager)->get(route('payrolls.show', $payroll))->assertForbidden();
         $this->get(route('payrolls.pdf', $payroll))->assertForbidden();
         $this->get(route('payrolls.index'))->assertDontSee($employee->name);
         $csv = $this->get(route('payrolls.export', ['month' => now()->format('Y-m')]))->streamedContent();
         $this->assertStringNotContainsString($employee->name, $csv);
     }
-    public function test_admin_can_assign_multiple_companies_and_cannot_disable_self()
+    public function test_superadmin_can_assign_branch_scoped_manager_and_cannot_disable_self()
     {
-        $data = ['name' => 'New Manager', 'username' => 'new_manager', 'email' => 'new@test.local', 'password' => 'Long-password-123', 'password_confirmation' => 'Long-password-123', 'role' => 'manager', 'is_active' => 1, 'companies' => [$this->company->id, $this->other->id]];
-        $this->actingAs($this->admin)->post(route('users.store'), $data)->assertSessionHasNoErrors();
-        $user = User::where('username', 'new_manager')->firstOrFail(); $this->assertEquals(2, $user->companies()->count());
+        $branch=Branch::create(['company_id'=>$this->other->id,'name'=>'Restricted Main','code'=>'RMAIN','location'=>'Jeddah','is_active'=>true]);
+        $data = ['name' => 'New Manager', 'username' => 'new_manager', 'email' => 'new@test.local', 'password' => 'Long-password-123', 'password_confirmation' => 'Long-password-123', 'role' => 'manager', 'is_active' => 1, 'company_id'=>$this->other->id,'branch_id'=>$branch->id];
+        $this->actingAs($this->owner)->post(route('users.store'), $data)->assertSessionHasNoErrors();
+        $user = User::where('username', 'new_manager')->firstOrFail(); $this->assertSame($this->other->id,$user->company_id); $this->assertSame($branch->id,$user->branch_id);
         $this->get(route('users.edit', $user))->assertOk();
-        $this->put(route('users.update', $this->admin), ['name' => 'Admin', 'username' => $this->admin->username, 'email' => $this->admin->email, 'role' => 'manager', 'is_active' => 0])->assertSessionHasErrors('role');
+        $this->put(route('users.update', $this->owner), ['name' => 'Owner', 'username' => $this->owner->username, 'email' => $this->owner->email, 'role' => 'manager', 'is_active' => 0,'company_id'=>$this->other->id,'branch_id'=>$branch->id])->assertSessionHasErrors('role');
     }
     public function test_lookup_management_preserves_employee_references()
     {
         $this->employee();
-        $this->actingAs($this->admin)->delete(route('companies.destroy', $this->company))->assertSessionHasErrors('name');
-        $this->put(route('companies.update', $this->company), ['name' => 'Updated Company', 'location' => 'Riyadh, Saudi Arabia', 'is_active' => 0])->assertSessionHasNoErrors();
+        $this->actingAs($this->owner)->delete(route('companies.destroy', $this->company))->assertSessionHasErrors('name');
+        $this->mockTenantProvisioning();
+        $this->put(route('companies.update', $this->company), $this->companyPayload('Updated Company',['is_active'=>0]))->assertSessionHasNoErrors();
         $this->assertFalse($this->company->fresh()->is_active);
-        $this->actingAs($this->manager)->post(route('designations.store'), ['name' => 'Welder'])->assertSessionHasNoErrors();
+        $this->company->update(['is_active'=>true]);
+        $this->actingAs($this->admin)->post(route('designations.store'), ['name' => 'Welder'])->assertSessionHasNoErrors();
         $designation = Designation::where('name', 'Welder')->firstOrFail();
         $this->put(route('designations.update', $designation), ['name' => 'Senior Welder', 'is_active' => 1])->assertSessionHasNoErrors();
         $this->delete(route('designations.destroy', $designation))->assertSessionHasNoErrors();
@@ -555,7 +618,7 @@ class ManpowerTest extends TestCase
     }
     public function test_company_and_designation_directories_use_separate_add_pages()
     {
-        $this->actingAs($this->admin)->get(route('companies.index'))
+        $this->actingAs($this->owner)->get(route('companies.index'))
             ->assertOk()
             ->assertSee(route('companies.create'), false)
             ->assertSee('+ Add company')
@@ -565,7 +628,7 @@ class ManpowerTest extends TestCase
             ->assertSee('New company')
             ->assertSee('name="registration_number"', false);
 
-        $this->actingAs($this->manager)->get(route('designations.index'))
+        $this->actingAs($this->admin)->get(route('designations.index'))
             ->assertOk()
             ->assertSee(route('designations.create'), false)
             ->assertSee('+ Add designation');
@@ -575,14 +638,14 @@ class ManpowerTest extends TestCase
     }
     public function test_superadmin_company_form_includes_arabic_name()
     {
-        $this->actingAs($this->admin)->get(route('companies.create'))
+        $this->actingAs($this->owner)->get(route('companies.create'))
             ->assertOk()
             ->assertSee('Company name — Arabic')
             ->assertSee('name="name_ar"', false);
     }
     public function test_authenticated_layout_has_collapsible_navigation()
     {
-        $this->actingAs($this->manager)->get(route('dashboard'))
+        $this->actingAs($this->manager)->get(route('manpower.index'))
             ->assertOk()
             ->assertSee('data-menu-toggle', false)
             ->assertSee('aria-controls="sidebar"', false)
@@ -596,13 +659,13 @@ class ManpowerTest extends TestCase
         $this->entry($visible, ['status' => 'pending']);
         $this->entry($restricted, ['status' => 'pending']);
 
-        $this->actingAs($this->manager)->get(route('dashboard', ['month' => now()->format('Y-m')]))
+        $this->actingAs($this->manager)->get(route('manpower.index', ['month' => now()->format('Y-m')]))
             ->assertOk()
-            ->assertSee('Workforce intelligence')
+            ->assertSee('Analytics dashboard')
             ->assertSee('Six-month operating trend')
             ->assertSee('Company performance')
             ->assertSee('Workforce composition')
-            ->assertSee('Combined monthly revenue')
+            ->assertSee('Payroll exposure')
             ->assertSee('1 timesheet entries')
             ->assertDontSee('Restricted Company');
     }
@@ -619,7 +682,7 @@ class ManpowerTest extends TestCase
     public function test_new_accounts_require_a_strong_password()
     {
         $payload = ['name' => 'Weak Account', 'username' => 'weak_account', 'email' => 'ignored@test.local', 'password' => 'alllowercase12', 'password_confirmation' => 'alllowercase12', 'role' => 'manager', 'is_active' => 1, 'companies' => [$this->company->id]];
-        $this->actingAs($this->admin)->post(route('users.store'), $payload)->assertSessionHasErrors('password');
+        $this->actingAs($this->owner)->post(route('users.store'), $payload)->assertSessionHasErrors('password');
         $this->assertDatabaseMissing('users', ['username' => 'weak_account']);
     }
     public function test_timesheet_screens_do_not_show_pay_rates()
@@ -639,7 +702,7 @@ class ManpowerTest extends TestCase
     public function test_all_filtered_pages_have_a_clear_action()
     {
         $this->actingAs($this->admin);
-        foreach (['dashboard', 'employees.index', 'own-employees.index', 'timesheets.index', 'attendance.index', 'payrolls.index', 'salaries.index', 'audit.index'] as $route) {
+        foreach (['manpower.index', 'employees.index', 'own-employees.index', 'timesheets.index', 'attendance.index', 'payrolls.index', 'salaries.index', 'audit.index'] as $route) {
             $this->get(route($route))->assertOk()->assertSee('Clear filter');
         }
         $this->get(route('timesheets.index'))->assertSee('data-clear-employee-search', false);
