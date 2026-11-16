@@ -170,6 +170,16 @@ html {
     scroll-margin-top: 18px;
 }
 
+.global-pos-shortcut {
+    position: fixed;
+    right: 24px;
+    bottom: 18px;
+    z-index: 24;
+    min-width: 86px;
+    min-height: 42px;
+    box-shadow: 0 8px 24px rgba(16, 45, 50, .24);
+}
+
 @media (min-width: 761px) {
     .sidebar,
     .app-shell {
@@ -249,6 +259,12 @@ html {
         width: 100%;
         max-width: none;
     }
+
+    .global-pos-shortcut {
+        right: 12px;
+        bottom: 12px;
+        min-width: 78px;
+    }
 }
 
 @media print {
@@ -258,5 +274,9 @@ html {
 
     .page-head {
         position: static;
+    }
+
+    .global-pos-shortcut {
+        display: none !important;
     }
 }
