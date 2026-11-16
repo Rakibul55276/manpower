@@ -47,16 +47,15 @@ class ReceiptSettingController extends Controller
 
     public function quotationUpdate(Request $request)
     {
-        if(is_array($request->input('quotation_terms_items'))){
-            $request->merge(['quotation_terms'=>collect($request->input('quotation_terms_items'))->filter(fn($term)=>is_string($term))->map(fn($term)=>trim($term))->filter()->take(100)->implode("\n")]);
-        }
-        $data=$request->validate([
+        $validated=$request->validate([
             'quotation_valid_days'=>'required|integer|min:1|max:365',
-            'quotation_terms'=>'required|string|min:1|max:5000',
-            'quotation_terms_items'=>'nullable|array|max:100',
+            'quotation_terms_items'=>'required|array|min:1|max:100',
             'quotation_terms_items.*'=>'nullable|string|max:1000',
         ]);
-        unset($data['quotation_terms_items']);
+        $terms=collect($validated['quotation_terms_items'])->filter(fn($term)=>is_string($term))->map(fn($term)=>trim($term))->filter()->implode("\n");
+        if($terms==='')throw \Illuminate\Validation\ValidationException::withMessages(['quotation_terms_items'=>'Enter at least one Terms & Conditions item.']);
+        if(mb_strlen($terms)>5000)throw \Illuminate\Validation\ValidationException::withMessages(['quotation_terms_items'=>'The combined Terms & Conditions cannot exceed 5,000 characters.']);
+        $data=['quotation_valid_days'=>$validated['quotation_valid_days'],'quotation_terms'=>$terms];
         $settings=ReceiptSetting::forCompany($request->user()->company_id)->firstOrFail();
         $settings->update($data);
         ActivityLog::record('Updated quotation defaults',$settings->company_name);

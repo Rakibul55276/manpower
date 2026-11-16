@@ -88,6 +88,11 @@ class CommercialDocumentTest extends TestCase
             'quotation_terms_items'=>['Payment within 30 days.','Delivery subject to availability.'],
         ])->assertSessionHasNoErrors();
         $this->assertDatabaseHas('safety_shop_receipt_settings',['company_id'=>$this->company->id,'quotation_valid_days'=>45,'quotation_terms'=>"Payment within 30 days.\nDelivery subject to availability."]);
+        $this->get(route('safety-shop.settings.quotations.edit'))
+            ->assertOk()
+            ->assertSee('Payment within 30 days.')
+            ->assertSee('Delivery subject to availability.')
+            ->assertDontSee('Prices are valid for 30 days.');
 
         $this->login($this->issuer)->get(route('safety-shop.sales.create'))
             ->assertOk()->assertSee('Save quotation')->assertSee('Review quotation T&amp;C',false)->assertSee('Select only the conditions that apply')->assertSee('Payment within 30 days.')->assertSee('Delivery subject to availability.');
