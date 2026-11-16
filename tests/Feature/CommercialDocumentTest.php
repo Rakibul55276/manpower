@@ -47,7 +47,8 @@ class CommercialDocumentTest extends TestCase
     public function test_issuer_creates_and_manager_approves_independent_documents(): void
     {
         $quote = ['customer_id' => $this->customer->id, 'document_date' => now()->toDateString(), 'valid_until' => now()->addDays(30)->toDateString(), 'reference' => 'RFQ-01', 'discount_type'=>'percent','discount_value'=>'10.00', 'lines' => [['product_id' => $this->product->id, 'description' => 'Safety Helmet', 'sku' => 'PPE-100', 'unit' => 'piece', 'quantity' => 2, 'unit_price' => '50.00'], ['description' => '']]];
-        $this->login($this->issuer)->post(route('quotations.store'), $quote)->assertSessionHasNoErrors();
+        $this->login($this->issuer)->get(route('quotations.index'))->assertOk()->assertSee('aria-label="Open POS checkout"',false);
+        $this->post(route('quotations.store'), $quote)->assertSessionHasNoErrors();
         $quotation = CommercialDocument::where('type', 'quotation')->firstOrFail();
         $this->assertSame('draft', $quotation->status);
         $this->assertSame(10000, $quotation->subtotal_cents);
