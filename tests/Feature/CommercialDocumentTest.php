@@ -173,15 +173,17 @@ class CommercialDocumentTest extends TestCase
         $this->assertSame(1,(int)Stock::where('location_id',$location->id)->where('product_id',$this->product->id)->value('quantity'));
     }
 
-    public function test_admin_edits_drafts_and_revises_approved_quotations_without_overwriting_history(): void
+    public function test_manager_and_admin_edit_quotations_while_issuer_cannot(): void
     {
         $admin=User::create(['name'=>'Company Admin','username'=>'quotation_admin','email'=>'quotation-admin@docs.test','password'=>Hash::make('Password-123'),'role'=>'admin','company_id'=>$this->company->id,'is_active'=>true]);
         $payload=['customer_id'=>$this->customer->id,'document_date'=>now()->toDateString(),'valid_until'=>now()->addDays(30)->toDateString(),'reference'=>'RFQ-REV','notes'=>'Original terms','lines'=>[['product_id'=>$this->product->id,'description'=>'Safety Helmet','sku'=>$this->product->sku,'unit'=>'piece','quantity'=>1,'unit_price'=>'50.00']]];
         $this->login($this->issuer)->post(route('quotations.store'),$payload)->assertSessionHasNoErrors();$original=CommercialDocument::firstOrFail();
-        $this->login($admin)->get(route('quotations.edit',$original))->assertOk()->assertSee('Edit Quotation');
+        $this->login($this->issuer)->get(route('quotations.edit',$original))->assertForbidden();
+        $this->login($this->manager)->get(route('quotations.edit',$original))->assertOk()->assertSee('Edit Quotation');
         $payload['lines'][0]['quantity']=2;$this->put(route('quotations.update',$original),$payload)->assertSessionHasNoErrors();$this->assertSame(2.0,(float)$original->fresh()->lines()->first()->quantity);
         $this->post(route('quotations.approve',$original))->assertSessionHasNoErrors();$original->refresh();$originalNumber=$original->number;
         $this->get(route('quotations.edit',$original))->assertNotFound();
+        $this->login($admin);
         $this->post(route('quotations.revise',$original))->assertRedirect();$revision=CommercialDocument::where('revision_of_id',$original->id)->firstOrFail();$this->assertSame('draft',$revision->status);$this->assertSame(1,(int)$revision->revision_number);
         $payload['notes']='Revised commercial terms';$payload['lines'][0]['quantity']=3;$this->put(route('quotations.update',$revision),$payload)->assertSessionHasNoErrors();$this->post(route('quotations.approve',$revision))->assertSessionHasNoErrors();
         $this->assertSame($originalNumber.'-R1',$revision->fresh()->number);$this->assertSame($revision->id,(int)$original->fresh()->superseded_by_id);$this->assertSame('superseded',$original->fresh()->lifecycle_status);$this->assertSame(2.0,(float)$original->lines()->first()->quantity);$this->assertSame(3.0,(float)$revision->lines()->first()->quantity);

@@ -48,9 +48,9 @@ class CommercialDocumentController extends Controller
         return $number;
     }
 
-    private function assertQuotationAdmin(Request $request): void
+    private function assertQuotationEditor(Request $request): void
     {
-        abort_unless($request->user()->isCompanyAdmin()&&!$request->user()->isSuperAdmin(),403);
+        abort_unless(!$request->user()->isSuperAdmin()&&$request->user()->company_id&&$request->user()->canApprove(),403);
     }
 
     private function assertCompanyApprover(Request $request): void
@@ -103,7 +103,7 @@ class CommercialDocumentController extends Controller
 
     public function edit(Request $request,$document)
     {
-        $this->assertQuotationAdmin($request);$type=$this->type($request);abort_unless($type==='quotation',404);$n=$this->names($type);$company=$request->user()->company_id;
+        $this->assertQuotationEditor($request);$type=$this->type($request);abort_unless($type==='quotation',404);$n=$this->names($type);$company=$request->user()->company_id;
         $document=$this->scoped($request,$document)->where('type','quotation')->where('status','draft')->with('lines')->firstOrFail();
         $customers=Customer::where('company_id',$company)->where('customer_type','company')->where('approval_status','approved')->where('is_active',1)->orderBy('name')->get();
         $products=Product::where('company_id',$company)->where('is_active',1)->orderBy('name')->get();
@@ -114,7 +114,7 @@ class CommercialDocumentController extends Controller
 
     public function update(Request $request,$document)
     {
-        $this->assertQuotationAdmin($request);$type=$this->type($request);abort_unless($type==='quotation',404);$company=(int)$request->user()->company_id;
+        $this->assertQuotationEditor($request);$type=$this->type($request);abort_unless($type==='quotation',404);$company=(int)$request->user()->company_id;
         $document=$this->scoped($request,$document)->where('type','quotation')->where('status','draft')->firstOrFail();
         $request->merge(['lines'=>collect($request->input('lines',[]))->filter(fn($line)=>filled($line['description']??null))->values()->all()]);
         $data=$request->validate([
@@ -130,14 +130,14 @@ class CommercialDocumentController extends Controller
 
     public function revise(Request $request,$document)
     {
-        $this->assertQuotationAdmin($request);$this->type($request);
+        $this->assertQuotationEditor($request);$this->type($request);
         $revision=DB::transaction(function()use($request,$document){$source=$this->scoped($request,$document)->where('type','quotation')->where('status','approved')->whereNull('superseded_by_id')->with('lines')->lockForUpdate()->firstOrFail();abort_if($source->revisions()->where('status','draft')->exists(),422,'An editable revision already exists.');$rootId=$source->revision_of_id?:$source->id;$next=(int)CommercialDocument::where(function($q)use($rootId){$q->whereKey($rootId)->orWhere('revision_of_id',$rootId);})->max('revision_number')+1;$copy=$source->replicate(['number','status','approved_by','approved_at','superseded_by_id','cancelled_by','cancelled_at','cancellation_reason']);$copy->number=null;$copy->status='draft';$copy->revision_of_id=$rootId;$copy->revision_number=$next;$copy->created_by=$request->user()->id;$copy->save();foreach($source->lines as $line){$copy->lines()->create($line->only(['product_id','quotation_item_master_id','description','sku','unit','quantity','unit_price_cents','subtotal_cents','tax_rate_units','tax_cents']));}return $copy;});
         ActivityLog::record('Created quotation revision','#'.$revision->id);return redirect()->route('quotations.edit',$revision)->with('success','Revision draft created. Review and approve it when ready.');
     }
 
     public function cancel(Request $request,$document)
     {
-        $this->assertQuotationAdmin($request);$this->type($request);$data=$request->validate(['cancellation_reason'=>'required|string|min:5|max:1000']);
+        $this->assertQuotationEditor($request);$this->type($request);$data=$request->validate(['cancellation_reason'=>'required|string|min:5|max:1000']);
         $item=$this->scoped($request,$document)->where('type','quotation')->whereIn('status',['draft','approved'])->firstOrFail();abort_if($item->superseded_by_id,422,'A superseded quotation cannot be cancelled.');$item->update(['status'=>'cancelled','cancelled_by'=>$request->user()->id,'cancelled_at'=>now(),'cancellation_reason'=>$data['cancellation_reason']]);ActivityLog::record('Cancelled quotation',($item->number?:'#'.$item->id).' · '.$data['cancellation_reason']);return back()->with('success','Quotation cancelled with audit history.');
     }
 
