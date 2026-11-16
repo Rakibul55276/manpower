@@ -7,6 +7,7 @@ use App\Models\CommercialDocument;
 use App\Models\QuotationItemMaster;
 use App\Modules\SafetyShop\Products\Models\Product;
 use App\Modules\SafetyShop\Sales\Models\Customer;
+use App\Modules\SafetyShop\Shared\Models\ReceiptSetting;
 use App\Services\Documents;
 use App\Services\Pay;
 use Illuminate\Http\Request;
@@ -96,7 +97,8 @@ class CommercialDocumentController extends Controller
         $quotationItems = QuotationItemMaster::where('company_id', $company)->where('is_active', 1)->orderBy('name')->get();
         $quotations = CommercialDocument::where('company_id', $company)->where('type', 'quotation')->where('status', 'approved')->whereNull('superseded_by_id')->with('customer')->latest()->get();
         $initialLines=[];
-        return view('commercial-documents.form', compact('type', 'n', 'customers', 'products', 'quotationItems', 'quotations','initialLines'));
+        $quotationSettings=$type==='quotation'?ReceiptSetting::forCompany($company)->first():null;
+        return view('commercial-documents.form', compact('type', 'n', 'customers', 'products', 'quotationItems', 'quotations','initialLines','quotationSettings'));
     }
 
     public function edit(Request $request,$document)
@@ -117,7 +119,7 @@ class CommercialDocumentController extends Controller
         $request->merge(['lines'=>collect($request->input('lines',[]))->filter(fn($line)=>filled($line['description']??null))->values()->all()]);
         $data=$request->validate([
             'customer_id'=>['required',Rule::exists('safety_shop_customers','id')->where(fn($q)=>$q->where('company_id',$company)->where('customer_type','company')->where('approval_status','approved'))],
-            'document_date'=>'required|date','valid_until'=>'required|date|after_or_equal:document_date','reference'=>'nullable|string|max:100','notes'=>'nullable|string|max:2000','discount_type'=>'nullable|in:fixed,percent','discount_value'=>'nullable|numeric|min:0|max:99999999','lines'=>'required|array|min:1|max:100',
+            'document_date'=>'required|date','valid_until'=>'required|date|after_or_equal:document_date','reference'=>'nullable|string|max:100','notes'=>'nullable|string|max:5000','discount_type'=>'nullable|in:fixed,percent','discount_value'=>'nullable|numeric|min:0|max:99999999','lines'=>'required|array|min:1|max:100',
             'lines.*.product_id'=>['nullable',Rule::exists('safety_shop_products','id')->where('company_id',$company)],'lines.*.quotation_item_master_id'=>['nullable',Rule::exists('quotation_item_masters','id')->where('company_id',$company)->where('is_active',1)],
             'lines.*.description'=>'required|string|max:255','lines.*.sku'=>'nullable|string|max:50','lines.*.unit'=>'required|string|max:20','lines.*.quantity'=>'required|numeric|min:0.01|max:999999','lines.*.unit_price'=>'required|numeric|min:0|max:99999999',
         ]);
@@ -147,7 +149,7 @@ class CommercialDocumentController extends Controller
             'customer_id' => ['required', Rule::exists('safety_shop_customers', 'id')->where(fn ($q) => $q->where('company_id', $company)->where('customer_type', 'company')->where('approval_status', 'approved'))],
             'quotation_id' => ['nullable', Rule::exists('commercial_documents', 'id')->where(fn ($q) => $q->where('company_id', $company)->where('type', 'quotation')->where('status', 'approved')->whereNull('superseded_by_id'))],
             'document_date' => 'required|date', 'valid_until' => $type === 'quotation' ? 'required|date|after_or_equal:document_date' : 'nullable|date',
-            'reference' => 'nullable|string|max:100', 'notes' => 'nullable|string|max:2000', 'discount_type' => 'nullable|in:fixed,percent', 'discount_value' => 'nullable|numeric|min:0|max:99999999', 'lines' => 'required|array|min:1|max:100',
+            'reference' => 'nullable|string|max:100', 'notes' => $type === 'quotation' ? 'nullable|string|max:5000' : 'nullable|string|max:2000', 'discount_type' => 'nullable|in:fixed,percent', 'discount_value' => 'nullable|numeric|min:0|max:99999999', 'lines' => 'required|array|min:1|max:100',
             'lines.*.product_id' => ['nullable', Rule::exists('safety_shop_products', 'id')->where('company_id', $company)],
             'lines.*.quotation_item_master_id' => ['nullable', Rule::exists('quotation_item_masters', 'id')->where('company_id', $company)->where('is_active', 1)],
             'lines.*.description' => 'required|string|max:255', 'lines.*.sku' => 'nullable|string|max:50',

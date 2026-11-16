@@ -37,4 +37,23 @@ class ReceiptSettingController extends Controller
         ActivityLog::record('Updated company document branding',$settings->company_name);
         return back()->with('success','Company branding updated. New documents will use these details.');
     }
+
+    public function quotationEdit(Request $request)
+    {
+        $company=$request->user()->company;
+        $settings=ReceiptSetting::firstOrCreate(['company_id'=>$company->id],['company_name'=>$company->name,'tagline'=>'Workforce Management','footer_text'=>'Thank you for your business.']);
+        return view('safety-shop.settings.quotations',compact('settings','company'));
+    }
+
+    public function quotationUpdate(Request $request)
+    {
+        $data=$request->validate([
+            'quotation_valid_days'=>'required|integer|min:1|max:365',
+            'quotation_terms'=>'nullable|string|max:5000',
+        ]);
+        $settings=ReceiptSetting::forCompany($request->user()->company_id)->firstOrFail();
+        $settings->update($data);
+        ActivityLog::record('Updated quotation defaults',$settings->company_name);
+        return back()->with('success','Quotation defaults updated. New quotations will use these terms.');
+    }
 }

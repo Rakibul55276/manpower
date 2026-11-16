@@ -73,6 +73,40 @@ class CommercialDocumentTest extends TestCase
         $this->get(route('delivery-notes.pdf', $note))->assertOk()->assertHeader('Content-Type', 'application/pdf');
     }
 
+    public function test_pos_can_save_a_quotation_using_company_defaults_without_deducting_stock(): void
+    {
+        $admin=User::create(['name'=>'Quotation Admin','username'=>'quotation_settings_admin','email'=>'quotation-settings-admin@test.local','password'=>Hash::make('Password-123'),'role'=>'admin','company_id'=>$this->company->id,'is_active'=>true]);
+        $location=Master::create(['company_id'=>$this->company->id,'type'=>'location','name'=>'Quotation Shop','is_active'=>true]);
+        Stock::create(['product_id'=>$this->product->id,'location_id'=>$location->id,'quantity'=>9]);
+
+        $this->login($admin)->put(route('safety-shop.settings.quotations.update'),[
+            'quotation_valid_days'=>45,
+            'quotation_terms'=>'Payment within 30 days. Delivery subject to availability.',
+        ])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('safety_shop_receipt_settings',['company_id'=>$this->company->id,'quotation_valid_days'=>45,'quotation_terms'=>'Payment within 30 days. Delivery subject to availability.']);
+
+        $this->login($this->issuer)->get(route('safety-shop.sales.create'))
+            ->assertOk()->assertSee('Save quotation')->assertSee('Payment within 30 days. Delivery subject to availability.');
+        $this->get(route('quotations.create'))->assertOk()->assertSee('Payment within 30 days. Delivery subject to availability.')->assertSee(now()->addDays(45)->toDateString());
+
+        $this->post(route('quotations.store'),[
+            'customer_id'=>$this->customer->id,
+            'document_date'=>now()->toDateString(),
+            'valid_until'=>now()->addDays(45)->toDateString(),
+            'reference'=>'POS-Q-01',
+            'notes'=>'Payment within 30 days. Delivery subject to availability.',
+            'discount_type'=>'fixed',
+            'discount_value'=>'5.00',
+            'lines'=>[['product_id'=>$this->product->id,'description'=>$this->product->name,'sku'=>$this->product->sku,'unit'=>$this->product->unit,'quantity'=>2,'unit_price'=>'50.00','price_includes_vat'=>0,'tax_category'=>'S']],
+        ])->assertSessionHasNoErrors();
+
+        $quotation=CommercialDocument::where('reference','POS-Q-01')->firstOrFail();
+        $this->assertSame('draft',$quotation->status);
+        $this->assertEquals(45,$quotation->document_date->diffInDays($quotation->valid_until));
+        $this->assertSame('Payment within 30 days. Delivery subject to availability.',$quotation->notes);
+        $this->assertSame(9,(int)Stock::where('location_id',$location->id)->where('product_id',$this->product->id)->value('quantity'));
+    }
+
     public function test_company_cannot_read_or_link_another_company_document(): void
     {
         $other = Company::create(['name' => 'Other Tenant', 'location' => 'Riyadh']);

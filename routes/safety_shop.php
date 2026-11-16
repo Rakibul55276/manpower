@@ -6,6 +6,13 @@ Route::middleware(['auth','active','auth.session','saas.subscription','operation
     Route::get('/',[SafetyShopController::class,'index'])->name('index');
     foreach (['Products','Categories','ProductMasters','Suppliers','Locations','Customers','Sales'] as $feature) require app_path('Modules/SafetyShop/'.$feature.'/routes.php');
 
+    Route::middleware('company_admin')->prefix('settings')->name('settings.')->group(function () {
+        Route::get('/company-branding', [\App\Modules\SafetyShop\Shared\Http\Controllers\ReceiptSettingController::class, 'edit'])->name('branding.edit');
+        Route::put('/company-branding', [\App\Modules\SafetyShop\Shared\Http\Controllers\ReceiptSettingController::class, 'update'])->name('branding.update');
+        Route::get('/quotations', [\App\Modules\SafetyShop\Shared\Http\Controllers\ReceiptSettingController::class, 'quotationEdit'])->name('quotations.edit');
+        Route::put('/quotations', [\App\Modules\SafetyShop\Shared\Http\Controllers\ReceiptSettingController::class, 'quotationUpdate'])->name('quotations.update');
+    });
+
     // Admins and managers review company analytics; issuers only perform operations.
     Route::middleware('approver')->group(function () {
         require app_path('Modules/SafetyShop/Reports/routes.php');

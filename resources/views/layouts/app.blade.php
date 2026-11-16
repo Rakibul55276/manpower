@@ -82,7 +82,7 @@
 <div class="nav-section" id="nav-section-organization" data-nav-section="organization">
 @if(auth()->user()->isCompanyAdmin())
 <a class="nav-link {{ request()->routeIs('company-users.*') ? 'active' : '' }}" href="{{ route('company-users.index') }}"><span class="nav-icon">⚙</span> Branch team access</a>
-@if($moduleContext==='safety-shop')<a class="nav-link {{ request()->routeIs('safety-shop.settings.*') ? 'active' : '' }}" href="{{ route('safety-shop.settings.branding.edit') }}"><span class="nav-icon">✦</span> Company branding</a>@endif
+@if($moduleContext==='safety-shop')<a class="nav-link {{ request()->routeIs('safety-shop.settings.branding.*') ? 'active' : '' }}" href="{{ route('safety-shop.settings.branding.edit') }}"><span class="nav-icon">✦</span> Company branding</a><a class="nav-link {{ request()->routeIs('safety-shop.settings.quotations.*') ? 'active' : '' }}" href="{{ route('safety-shop.settings.quotations.edit') }}"><span class="nav-icon">▤</span> Quotation settings</a>@endif
 @if($moduleContext==='manpower' && config('manpower.enabled'))
 <a class="nav-link {{ request()->routeIs('designations.*') ? 'active' : '' }}" href="{{ route('designations.index') }}"><span class="nav-icon">◇</span> Designations</a>
 @endif

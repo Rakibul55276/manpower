@@ -31,6 +31,10 @@
     const addPayment = document.getElementById('checkout-add-payment');
     const submit = document.getElementById('checkout-submit');
     const saveDraft = document.getElementById('checkout-save-draft');
+    const saveQuotation = document.getElementById('checkout-save-quotation');
+    const quotationReference = document.getElementById('checkout-quotation-reference');
+    const quotationNotes = document.getElementById('checkout-quotation-notes');
+    const quotationDiscount = document.getElementById('checkout-quotation-discount');
     const message = document.getElementById('checkout-message');
     const add = document.getElementById('checkout-add');
     const fromQuotation = document.getElementById('checkout-from-quotation');
@@ -112,8 +116,8 @@
     newCustomerToggle.addEventListener('click', () => { customerQuickForm.reset(); customerQuickForm.elements.country_code.value = 'SA'; syncQuickCustomerType(); customerDialog.showModal(); customerQuickForm.elements.name.focus(); });
     if (savedCustomer) savedCustomer.addEventListener('change', () => {
         const option = savedCustomer.selectedOptions[0];
-        if (!option || !option.value) { customerType.value = 'retail'; customerName.value = ''; customerContact.value = ''; customerPhone.value = ''; customerEmail.value = ''; customerVat.value = ''; customerCr.value = ''; customerAddress.value = ''; syncCustomerType(); return; }
-        customerType.value = option.dataset.type || 'retail'; customerName.value = option.dataset.name || ''; customerContact.value = option.dataset.contact || ''; customerPhone.value = option.dataset.phone || ''; customerEmail.value = option.dataset.email || ''; customerVat.value = option.dataset.vat || ''; customerCr.value = option.dataset.cr || ''; customerAddress.value = option.dataset.address || ''; syncCustomerType();
+        if (!option || !option.value) { customerType.value = 'retail'; customerName.value = ''; customerContact.value = ''; customerPhone.value = ''; customerEmail.value = ''; customerVat.value = ''; customerCr.value = ''; customerAddress.value = ''; syncCustomerType(); payment(); return; }
+        customerType.value = option.dataset.type || 'retail'; customerName.value = option.dataset.name || ''; customerContact.value = option.dataset.contact || ''; customerPhone.value = option.dataset.phone || ''; customerEmail.value = option.dataset.email || ''; customerVat.value = option.dataset.vat || ''; customerCr.value = option.dataset.cr || ''; customerAddress.value = option.dataset.address || ''; syncCustomerType(); payment();
     });
     const csrf = form.querySelector('input[name="_token"]').value;
     const errorText = payload => payload?.errors ? Object.values(payload.errors).flat().join('\n') : (payload?.message || 'Unable to save. Please check the details.');
@@ -253,6 +257,7 @@
         const invalidChange = change > cashCents;
         submit.disabled = posting || busy || !cart.size || invalidDiscount || invalidChange;
         if (saveDraft) saveDraft.disabled = posting || busy || !cart.size || invalidDiscount;
+        if (saveQuotation) saveQuotation.disabled = posting || busy || !cart.size || invalidDiscount || savedCustomer?.selectedOptions[0]?.dataset.type !== 'company';
     }
     function input(name, value) {
         const field = document.createElement('input');
@@ -278,7 +283,7 @@
         for (const item of cart.values()) {
             const row = document.createElement('tr');
             const product = cell(row, `${item.name} · ${item.barcode}`);
-            product.append(input(`lines[${index}][product_id]`, item.id), input(`lines[${index}][price_cents]`, item.price_cents));
+            product.append(input(`lines[${index}][product_id]`, item.id), input(`lines[${index}][price_cents]`, item.price_cents), input(`lines[${index}][description]`, item.name), input(`lines[${index}][sku]`, item.sku || ''), input(`lines[${index}][unit]`, item.unit || 'EA'), input(`lines[${index}][unit_price]`, money(item.price_cents)), input(`lines[${index}][price_includes_vat]`, item.price_includes_vat ? 1 : 0), input(`lines[${index}][tax_category]`, item.tax_category || 'S'));
             cell(row, String(item.available)); cell(row, `${money(item.price_cents)} ${item.price_includes_vat?'incl. VAT':'excl. VAT'} · ${item.tax_category||'S'} ${Number(item.tax_rate_units||0)/100}%`);
             const quantityCell = cell(row, '');
             const quantity = document.createElement('input');
@@ -379,16 +384,25 @@
     discount.addEventListener('input', payment);
     form.addEventListener('keydown', event => { if (event.key === 'Enter' && event.target !== submit) event.preventDefault(); });
     form.addEventListener('submit', event => {
+        const quotationAction = event.submitter?.value === 'quotation';
         const draftAction = event.submitter?.value === 'draft';
-        if (posting || busy || !cart.size || (draftAction ? saveDraft?.disabled : submit.disabled)) { event.preventDefault(); return; }
-        if (!draftAction && !window.confirm('Finalize and lock this invoice? Stock will be deducted and the invoice cannot be edited directly afterward.')) { event.preventDefault(); return; }
+        if (posting || busy || !cart.size || (quotationAction ? saveQuotation?.disabled : (draftAction ? saveDraft?.disabled : submit.disabled))) { event.preventDefault(); if(quotationAction)message.textContent='Choose an approved company customer before saving a quotation.'; return; }
+        if (!quotationAction && !draftAction && !window.confirm('Finalize and lock this invoice? Stock will be deducted and the invoice cannot be edited directly afterward.')) { event.preventDefault(); return; }
+        if (quotationAction) {
+            const defaultTerms = quotationNotes?.dataset.defaultTerms || '';
+            const extraNotes = invoiceNotes?.value.trim() || '';
+            if (quotationReference) quotationReference.value = customerPo?.value.trim() || '';
+            if (quotationDiscount) quotationDiscount.value = Number(discount.value || 0).toFixed(2);
+            if (quotationNotes) quotationNotes.value = [extraNotes, defaultTerms].filter(Boolean).join('\n\n');
+            const sourceQuotation = form.querySelector('[name="quotation_id"]');
+            if (sourceQuotation) sourceQuotation.disabled = true;
+        }
         // Disabled submit buttons are omitted from browser form data. Preserve
         // the selected workflow before locking both buttons against double-clicks.
-        const action = input('submit_action', draftAction ? 'draft' : 'final');
-        form.append(action);
+        if (!quotationAction) { const action = input('submit_action', draftAction ? 'draft' : 'final'); form.append(action); }
         if (event.submitter) event.submitter.removeAttribute('name');
-        posting = true; submit.disabled = true; if(saveDraft)saveDraft.disabled=true;
-        if (event.submitter) event.submitter.textContent = draftAction ? 'Saving draft…' : 'Posting sale…';
+        posting = true; submit.disabled = true; if(saveDraft)saveDraft.disabled=true; if(saveQuotation)saveQuotation.disabled=true;
+        if (event.submitter) event.submitter.textContent = quotationAction ? 'Saving quotation…' : (draftAction ? 'Saving draft…' : 'Posting sale…');
     });
     const initialNode = document.getElementById('checkout-initial-data');
     if (initialNode) {

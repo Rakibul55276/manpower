@@ -22,6 +22,12 @@
 @php($editingSale=(isset($draft) && $draft) ? $draft : $replacement)
 <form id="shop-checkout" method="POST" action="{{ route('safety-shop.sales.store') }}" data-barcode-url="{{ route('safety-shop.barcode') }}" data-customer-url="{{ route('safety-shop.sales.quick-customer') }}" data-product-url="{{ route('safety-shop.sales.quick-product') }}" data-can-edit-products="{{ auth()->user()->isCompanyAdmin()?1:0 }}">@csrf
 <input type="hidden" name="request_key" value="{{ $requestKey }}">
+<input type="hidden" name="document_date" value="{{ now()->toDateString() }}">
+<input type="hidden" name="valid_until" value="{{ now()->addDays($quotationValidDays ?? 30)->toDateString() }}">
+<input id="checkout-quotation-reference" type="hidden" name="reference" value="">
+<input id="checkout-quotation-notes" type="hidden" name="notes" value="{{ $quotationTerms ?? '' }}" data-default-terms="{{ $quotationTerms ?? '' }}">
+<input type="hidden" name="discount_type" value="fixed">
+<input id="checkout-quotation-discount" type="hidden" name="discount_value" value="0.00">
 @if($replacement)<input type="hidden" name="replacement_of_id" value="{{ $replacement->id }}">@endif
 @if(isset($draft) && $draft)<input type="hidden" name="draft_id" value="{{ $draft->id }}">@endif
 @if(!$editingSale)
@@ -65,7 +71,7 @@
 <details class="checkout-addon" {{ old('invoice_notes',data_get($initialCheckout,'invoice_notes'))?'open':'' }}><summary>📝 Invoice notes</summary><div class="field"><label for="checkout-invoice-notes">Invoice notes <span class="muted">(optional)</span></label><textarea id="checkout-invoice-notes" name="invoice_notes" maxlength="250" rows="3" placeholder="Payment terms, delivery reference, customer instructions, or another note to print on the invoice">{{ old('invoice_notes',data_get($initialCheckout,'invoice_notes')) }}</textarea><small>Maximum 250 characters. Printed on the invoice and PDF.</small></div></details>
 </div>
 </div><p class="help"><strong>Draft</strong> does not deduct stock. <strong>Finalize</strong> posts the invoice and deducts stock.</p></div>
-<div class="form-footer checkout-actions"><a class="btn secondary checkout-cancel-action" href="{{ route('safety-shop.index') }}">Cancel</a><button id="checkout-save-draft" class="btn secondary" type="submit" name="submit_action" value="draft" disabled>Save draft</button><button id="checkout-submit" class="btn checkout-cash-action" type="submit" name="submit_action" value="final" disabled>Cash · Finalize</button><a class="btn secondary recent-transactions" href="{{ route('safety-shop.sales.index') }}">Recent transactions</a></div>
+<div class="form-footer checkout-actions"><a class="btn secondary checkout-cancel-action" href="{{ route('safety-shop.index') }}">Cancel</a><button id="checkout-save-quotation" class="btn secondary" type="submit" name="checkout_action" value="quotation" formaction="{{ route('quotations.store') }}" disabled>Save quotation</button><button id="checkout-save-draft" class="btn secondary" type="submit" name="submit_action" value="draft" disabled>Save draft</button><button id="checkout-submit" class="btn checkout-cash-action" type="submit" name="submit_action" value="final" disabled>Cash · Finalize</button><a class="btn secondary recent-transactions" href="{{ route('safety-shop.sales.index') }}">Recent transactions</a></div>
 </div>
 <noscript><p>Enable JavaScript to use barcode checkout.</p></noscript>
 </form></div></div>
