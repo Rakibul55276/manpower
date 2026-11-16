@@ -4,7 +4,7 @@ $editing=isset($document);
 $quotationTermsValue='';
 $quotationTermRows=collect();
 if($type==='quotation'){
-    $quotationTermsValue=(string)old('notes',$editing?$document->notes:optional($quotationSettings)->quotation_terms);
+    $quotationTermsValue=(string)old('notes',$editing?$document->notes:($quotationSettings?$quotationSettings->effectiveQuotationTerms():\App\Modules\SafetyShop\Shared\Models\ReceiptSetting::defaultQuotationTerms()));
     $quotationTermRows=collect(preg_split('/\R/u',$quotationTermsValue))->map(fn($term)=>trim($term))->filter()->values();
     if($quotationTermRows->isEmpty())$quotationTermRows=collect(['']);
 }

@@ -74,7 +74,7 @@ class SaleController extends Controller
         $categories=Master::where('company_id',$companyId)->where('type','category')->where('is_active',true)->orderBy('name')->get();
         $catalogProducts=$this->checkoutCatalog($companyId,$shopLocation);
         $productSuggestions=$this->checkoutProductSuggestions($companyId);
-        $quotationValidDays=(int)(optional($settings)->quotation_valid_days ?: 30);$quotationTerms=(string)(optional($settings)->quotation_terms ?: '');
+        $quotationValidDays=(int)(optional($settings)->quotation_valid_days ?: 30);$quotationTerms=$settings?$settings->effectiveQuotationTerms():ReceiptSetting::defaultQuotationTerms();
         return view('safety-shop.sales.checkout',compact('shopLocation','customers','quotations','categories','catalogProducts','productSuggestions','requestKey','replacement','initialCheckout','quotationValidDays','quotationTerms'));
     }
 
@@ -105,7 +105,7 @@ class SaleController extends Controller
         $catalogProducts=$this->checkoutCatalog($companyId,$shopLocation);
         $productSuggestions=$this->checkoutProductSuggestions($companyId);
         $quotations=collect();
-        $settings=ReceiptSetting::forCompany($companyId)->first();$quotationValidDays=(int)(optional($settings)->quotation_valid_days ?: 30);$quotationTerms=(string)(optional($settings)->quotation_terms ?: '');
+        $settings=ReceiptSetting::forCompany($companyId)->first();$quotationValidDays=(int)(optional($settings)->quotation_valid_days ?: 30);$quotationTerms=$settings?$settings->effectiveQuotationTerms():ReceiptSetting::defaultQuotationTerms();
         return view('safety-shop.sales.checkout',compact('shopLocation','customers','quotations','categories','catalogProducts','productSuggestions','requestKey','replacement','initialCheckout','draft','quotationValidDays','quotationTerms'));
     }
     private function checkoutCatalog(int $companyId, $location)

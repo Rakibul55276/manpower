@@ -49,7 +49,7 @@ class ReceiptSettingController extends Controller
     {
         $data=$request->validate([
             'quotation_valid_days'=>'required|integer|min:1|max:365',
-            'quotation_terms'=>'nullable|string|max:5000',
+            'quotation_terms'=>'required|string|min:1|max:5000',
         ]);
         $settings=ReceiptSetting::forCompany($request->user()->company_id)->firstOrFail();
         $settings->update($data);

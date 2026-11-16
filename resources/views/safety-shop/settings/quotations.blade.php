@@ -5,7 +5,7 @@
 @section('actions')<a class="btn secondary" href="{{ route('quotations.index') }}">View quotations</a>@endsection
 @section('content')
 @php
-$quotationTermsValue=old('quotation_terms',$settings->quotation_terms);
+$quotationTermsValue=old('quotation_terms',$settings->effectiveQuotationTerms());
 $quotationTermRows=collect(preg_split('/\R/u',(string)$quotationTermsValue))->map(fn($term)=>trim($term))->filter()->values();
 if($quotationTermRows->isEmpty())$quotationTermRows=collect(['']);
 @endphp

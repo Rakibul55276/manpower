@@ -80,6 +80,9 @@ class CommercialDocumentTest extends TestCase
         $location=Master::create(['company_id'=>$this->company->id,'type'=>'location','name'=>'Quotation Shop','is_active'=>true]);
         Stock::create(['product_id'=>$this->product->id,'location_id'=>$location->id,'quantity'=>9]);
 
+        $this->login($this->issuer)->get(route('safety-shop.sales.create'))->assertOk()->assertSee('Prices are valid for 30 days.')->assertSee('Delivery is subject to stock availability.')->assertSee('Payment is due within 30 days.');
+        $this->get(route('quotations.create'))->assertOk()->assertSee('Prices are valid for 30 days.')->assertSee('Delivery is subject to stock availability.')->assertSee('Payment is due within 30 days.');
+
         $this->login($admin)->put(route('safety-shop.settings.quotations.update'),[
             'quotation_valid_days'=>45,
             'quotation_terms'=>'Payment within 30 days. Delivery subject to availability.',
