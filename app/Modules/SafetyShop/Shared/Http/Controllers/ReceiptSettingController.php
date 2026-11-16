@@ -47,10 +47,16 @@ class ReceiptSettingController extends Controller
 
     public function quotationUpdate(Request $request)
     {
+        if(is_array($request->input('quotation_terms_items'))){
+            $request->merge(['quotation_terms'=>collect($request->input('quotation_terms_items'))->filter(fn($term)=>is_string($term))->map(fn($term)=>trim($term))->filter()->take(100)->implode("\n")]);
+        }
         $data=$request->validate([
             'quotation_valid_days'=>'required|integer|min:1|max:365',
             'quotation_terms'=>'required|string|min:1|max:5000',
+            'quotation_terms_items'=>'nullable|array|max:100',
+            'quotation_terms_items.*'=>'nullable|string|max:1000',
         ]);
+        unset($data['quotation_terms_items']);
         $settings=ReceiptSetting::forCompany($request->user()->company_id)->firstOrFail();
         $settings->update($data);
         ActivityLog::record('Updated quotation defaults',$settings->company_name);

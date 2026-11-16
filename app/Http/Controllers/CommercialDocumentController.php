@@ -82,6 +82,12 @@ class CommercialDocumentController extends Controller
         return $discount;
     }
 
+    private function normalizeQuotationTerms(Request $request,string $type): void
+    {
+        if($type!=='quotation'||!is_array($request->input('notes_items')))return;
+        $request->merge(['notes'=>collect($request->input('notes_items'))->filter(fn($term)=>is_string($term))->map(fn($term)=>trim($term))->filter()->take(100)->implode("\n")]);
+    }
+
     public function index(Request $request)
     {
         $type = $this->type($request); $n = $this->names($type);
@@ -115,6 +121,7 @@ class CommercialDocumentController extends Controller
     public function update(Request $request,$document)
     {
         $this->assertQuotationEditor($request);$type=$this->type($request);abort_unless($type==='quotation',404);$company=(int)$request->user()->company_id;
+        $this->normalizeQuotationTerms($request,$type);
         $document=$this->scoped($request,$document)->where('type','quotation')->where('status','draft')->firstOrFail();
         $request->merge(['lines'=>collect($request->input('lines',[]))->filter(fn($line)=>filled($line['description']??null))->values()->all()]);
         $data=$request->validate([
@@ -144,6 +151,7 @@ class CommercialDocumentController extends Controller
     public function store(Request $request)
     {
         $type = $this->type($request); $company = (int) $request->user()->company_id;
+        $this->normalizeQuotationTerms($request,$type);
         $request->merge(['lines' => collect($request->input('lines', []))->filter(fn ($line) => filled($line['description'] ?? null))->values()->all()]);
         $data = $request->validate([
             'customer_id' => ['required', Rule::exists('safety_shop_customers', 'id')->where(fn ($q) => $q->where('company_id', $company)->where('customer_type', 'company')->where('approval_status', 'approved'))],
