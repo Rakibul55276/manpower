@@ -87,8 +87,8 @@ class CommercialDocumentTest extends TestCase
         $this->assertDatabaseHas('safety_shop_receipt_settings',['company_id'=>$this->company->id,'quotation_valid_days'=>45,'quotation_terms'=>'Payment within 30 days. Delivery subject to availability.']);
 
         $this->login($this->issuer)->get(route('safety-shop.sales.create'))
-            ->assertOk()->assertSee('Save quotation')->assertSee('Payment within 30 days. Delivery subject to availability.');
-        $this->get(route('quotations.create'))->assertOk()->assertSee('Payment within 30 days. Delivery subject to availability.')->assertSee(now()->addDays(45)->toDateString());
+            ->assertOk()->assertSee('Save quotation')->assertSee('Review quotation T&amp;C',false)->assertSee('Select only the conditions that apply')->assertSee('Payment within 30 days. Delivery subject to availability.');
+        $this->get(route('quotations.create'))->assertOk()->assertSee('Payment within 30 days. Delivery subject to availability.')->assertSee('Add condition')->assertSee('Review these conditions for this quotation.')->assertSee(now()->addDays(45)->toDateString());
 
         $this->post(route('quotations.store'),[
             'customer_id'=>$this->customer->id,
@@ -102,6 +102,7 @@ class CommercialDocumentTest extends TestCase
         ])->assertSessionHasNoErrors();
 
         $quotation=CommercialDocument::where('reference','POS-Q-01')->firstOrFail();
+        $this->get(route('quotations.show',$quotation))->assertOk()->assertSee('Terms &amp; Conditions',false)->assertSee('Payment within 30 days. Delivery subject to availability.');
         $this->assertSame('draft',$quotation->status);
         $this->assertEquals(45,$quotation->document_date->diffInDays($quotation->valid_until));
         $this->assertSame('Payment within 30 days. Delivery subject to availability.',$quotation->notes);

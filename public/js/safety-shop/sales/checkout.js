@@ -34,6 +34,11 @@
     const saveQuotation = document.getElementById('checkout-save-quotation');
     const quotationReference = document.getElementById('checkout-quotation-reference');
     const quotationNotes = document.getElementById('checkout-quotation-notes');
+    const quotationTermsList = document.getElementById('checkout-terms-list');
+    const quotationTermTemplate = document.getElementById('checkout-term-template');
+    const quotationTermsAdd = document.getElementById('checkout-terms-add');
+    const quotationTermsDialog = document.getElementById('checkout-terms-dialog');
+    const quotationTermsConfirm = document.getElementById('checkout-terms-confirm');
     const quotationDiscount = document.getElementById('checkout-quotation-discount');
     const message = document.getElementById('checkout-message');
     const add = document.getElementById('checkout-add');
@@ -54,8 +59,17 @@
     let barcodeInputStartedAt = 0;
     let previousBarcodeLength = 0;
     let recoveryItem = null;
+    let quotationTermsConfirmed = false;
     const paymentEntries = [];
     const paymentLabels = {cash: 'Cash', card: 'Card', bank: 'Bank transfer'};
+    const syncQuotationTerms=()=>{if(quotationNotes&&quotationTermsList)quotationNotes.value=Array.from(quotationTermsList.querySelectorAll('.checkout-term-row')).filter(row=>row.querySelector('.checkout-term-select')?.checked).map(row=>row.querySelector('.checkout-term-input')?.value.trim()).filter(Boolean).join('\n');};
+    const addQuotationTerm=(after=null)=>{if(!quotationTermsList||!quotationTermTemplate)return;const row=quotationTermTemplate.content.firstElementChild.cloneNode(true);after?after.after(row):quotationTermsList.appendChild(row);row.querySelector('.checkout-term-input').focus();syncQuotationTerms();};
+    if(quotationTermsList){quotationTermsList.addEventListener('input',syncQuotationTerms);quotationTermsList.addEventListener('click',event=>{const row=event.target.closest('.checkout-term-row');if(!row)return;if(event.target.closest('.checkout-term-add-row'))addQuotationTerm(row);if(event.target.closest('.checkout-term-remove-row')){if(quotationTermsList.children.length===1){row.querySelector('.checkout-term-input').value='';row.querySelector('.checkout-term-input').focus();}else row.remove();syncQuotationTerms();}});}
+    if(quotationTermsAdd)quotationTermsAdd.addEventListener('click',()=>addQuotationTerm());
+    document.getElementById('checkout-terms-close')?.addEventListener('click',()=>quotationTermsDialog?.close());
+    document.getElementById('checkout-terms-cancel')?.addEventListener('click',()=>quotationTermsDialog?.close());
+    if(quotationTermsConfirm)quotationTermsConfirm.addEventListener('click',()=>{syncQuotationTerms();quotationTermsConfirmed=true;quotationTermsDialog?.close();saveQuotation?.click();});
+    syncQuotationTerms();
     const productPlaceholderNode=document.getElementById('checkout-product-placeholder');
     if(productPlaceholderNode){try{const source=JSON.parse(productPlaceholderNode.textContent);catalogProducts.forEach(button=>{const placeholder=button.querySelector('.catalog-product-icon');if(!placeholder)return;const image=document.createElement('img');image.className='catalog-product-image';image.src=source;image.alt='';placeholder.replaceWith(image);});}catch(error){/* Text fallback remains available. */}}
     const productImagesNode=document.getElementById('checkout-product-images');
@@ -387,9 +401,11 @@
         const quotationAction = event.submitter?.value === 'quotation';
         const draftAction = event.submitter?.value === 'draft';
         if (posting || busy || !cart.size || (quotationAction ? saveQuotation?.disabled : (draftAction ? saveDraft?.disabled : submit.disabled))) { event.preventDefault(); if(quotationAction)message.textContent='Choose an approved company customer before saving a quotation.'; return; }
+        if (quotationAction && !quotationTermsConfirmed && quotationTermsDialog?.showModal) { event.preventDefault(); quotationTermsDialog.showModal(); return; }
         if (!quotationAction && !draftAction && !window.confirm('Finalize and lock this invoice? Stock will be deducted and the invoice cannot be edited directly afterward.')) { event.preventDefault(); return; }
         if (quotationAction) {
-            const defaultTerms = quotationNotes?.dataset.defaultTerms || '';
+            syncQuotationTerms();
+            const defaultTerms = quotationNotes?.value.trim() || '';
             const extraNotes = invoiceNotes?.value.trim() || '';
             if (quotationReference) quotationReference.value = customerPo?.value.trim() || '';
             if (quotationDiscount) quotationDiscount.value = Number(discount.value || 0).toFixed(2);
